@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isometric Dithered Blob Playground x Radio</title>
+    <style>
+        /* --- 1. Custom Font & Global Styles --- */
+        @font-face {
+            font-family: 'Saturno';
+            /* Note: Ensure the saturno font file is in your directory, or replace this URL */
+            src: url('saturno.woff2') format('woff2'),
+                 url('saturno.woff') format('woff');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #777777;
+            font-family: 'Saturno', monospace; /* Fallback to monospace if font is missing */
+            user-select: none;
+            color: #222;
+        }
+
+        /* --- 2. Canvas Layer --- */
+        #canvas-container {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            cursor: grab;
+            z-index: 1;
+        }
+        #canvas-container:active { cursor: grabbing; }
+        canvas {
+            width: 100vw !important; height: 100vh !important;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: pixelated;
+        }
+
+        /* --- 3. Desktop & Window UI (Imported from sampler-web) --- */
+        #desktop {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none; /* Let clicks pass through to canvas by default */
+            z-index: 10;
+        }
+
+        /* The Window Box */
+        .window {
+            position: absolute;
+            top: 20px; left: 20px;
+            width: 320px;
+            background: #D4D0C8; /* Classic Win95 gray */
+            border-top: 2px solid #FFFFFF;
+            border-left: 2px solid #FFFFFF;
+            border-right: 2px solid #404040;
+            border-bottom: 2px solid #404040;
+            box-shadow: 4px 4px 0px rgba(0,0,0,0.2);
+            pointer-events: auto; /* Enable clicks inside windows */
+            display: flex;
+            flex-direction: column;
+            image-rendering: pixelated;
+        }
+
+        /* Titlebar */
+        .titlebar {
+            background: #000080;
+            color: white;
+            padding: 4px 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: 'Saturno', monospace;
+            font-size: 14px;
+            cursor: move;
+        }
+
+        .traffic {
+            display: flex;
+            gap: 4px;
+        }
+
+        .traffic button {
+            width: 12px; height: 12px;
+            border: 1px solid #FFF;
+            background: #C0C0C0;
+            cursor: pointer;
+            padding: 0;
+            box-shadow: none;
+        }
+        
+        .traffic button.tl-close { background: #FF605C; }
+        .traffic button.tl-min { background: #FFBD44; }
+        .traffic button.tl-max { background: #00CA4E; }
+
+        /* Window Body */
+        .body {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #D4D0C8;
+        }
+
+        /* --- 4. Tactile Buttons & Inputs --- */
+        button.action-btn {
+            padding: 8px 12px;
+            background: #D4D0C8;
+            color: #222;
+            border-top: 2px solid #FFFFFF;
+            border-left: 2px solid #FFFFFF;
+            border-right: 2px solid #404040;
+            border-bottom: 2px solid #404040;
+            font-family: 'Saturno', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            outline: none;
+            transition: transform 0.05s;
+        }
+
+        button.action-btn:active, button.action-btn.active {
+            border-top: 2px solid #404040;
+            border-left: 2px solid #404040;
+            border-right: 2px solid #FFFFFF;
+            border-bottom: 2px solid #FFFFFF;
+            transform: translate(1px, 1px);
+        }
+
+        select, input[type="range"] {
+            font-family: 'Saturno', monospace;
+            padding: 4px;
+            width: 100%;
+            box-sizing: border-box;
+            background: #FFF;
+            border: 2px inset #404040;
+        }
+
+        .radio-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            bottom: 20px; right: 20px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+            pointer-events: auto;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <!-- UI Overlay for Spawn Button -->
+    <div id="ui-overlay">
+        <button id="spawn-btn" class="action-btn">Spawn Friend</button>
+    </div>
+
+    <!-- Desktop Environment for Windows -->
+    <main id="desktop"></main>
+
+    <!-- Window Template (from sampler-web) -->
+    <template id="tpl-window">
+        <section class="window">
+            <header class="titlebar">
+                <div class="traffic">
+                    <button class="tl-close" title="close"></button>
+                    <button class="tl-min" title="minimise"></button>
+                    <button class="tl-max" title="maximise"></button>
+                </div>
+                <div class="title">Radio Module</div>
+                <div class="titlebar-right"></div>
+            </header>
+            <div class="body">
+                <select id="radio-stations">
+                    <option value="">Select a Station...</option>
+                    <option value="https://ice1.somafm.com/groovesalad-128-mp3">SomaFM: Groove Salad</option>
+                    <option value="https://ice1.somafm.com/defcon-128-mp3">SomaFM: DEF CON Radio</option>
+                    <option value="https://kexp-mp3-128.streamguys1.com/kexp128.mp3">KEXP Seattle</option>
+                    <option value="https://wfmu.org/wfmu.pls">WFMU Freeform</option>
+                </select>
+                <div class="radio-controls">
+                    <button id="radio-play" class="action-btn" style="flex: 1;">Play</button>
+                    <button id="radio-stop" class="action-btn" style="flex: 1;">Stop</button>
+                </div>
+                <div>
+                    <label style="font-size: 12px;">Volume</label>
+                    <input type="range" id="radio-vol" min="0" max="1" step="0.01" value="0.5">
+                </div>
+            </div>
+        </section>
+    </template>
+
+    <!-- 3D Canvas Layer -->
+    <div id="canvas-container"></div>
+
+    <script>
+        // ==========================================
+        // 1. Web Audio API & Radio Logic
+        // ==========================================
+        let audioCtx, analyser, dataArray, audioSource;
+        const radioAudio = new Audio();
+        radioAudio.crossOrigin = "anonymous"; // Required for visualizer
+        
+        let audioData = 0; // Represents current volume/bass intensity
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                
+                audioSource = audioCtx.createMediaElementSource(radioAudio);
+                audioSource.connect(analyser);
+                analyser.connect(audioCtx.destination);
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // ==========================================
+        // 2. Window UI Instantiation
+        // ==========================================
+        const desktop = document.getElementById('desktop');
+        const tplWindow = document.getElementById('tpl-window');
+
+        function createRadioWindow() {
+            const clone = tplWindow.content.cloneNode(true);
+            const winEl = clone.querySelector('.window');
+            
+            // Dragging logic for Titlebar
+            const titlebar = winEl.querySelector('.titlebar');
+            let isDragging = false, offsetX, offsetY;
+
+            titlebar.addEventListener('mousedown', (e) => {
+                if (e.target.tagName === 'BUTTON') return;
+                isDragging = true;
+                const rect = winEl.getBoundingClientRect();
+                offsetX = e.clientX - rect.left;
+                offsetY = e.clientY - rect.top;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                winEl.style.left = `${e.clientX - offsetX}px`;
+                winEl.style.top = `${e.clientY - offsetY}px`;
+            });
+
+            window.addEventListener('mouseup', () => { isDragging = false; });
+
+            // Radio Controls Logic
+            const select = winEl.querySelector('#radio-stations');
+            const btnPlay = winEl.querySelector('#radio-play');
+            const btnStop = winEl.querySelector('#radio-stop');
+            const volSlider = winEl.querySelector('#radio-vol');
+
+            btnPlay.addEventListener('click', () => {
+                initAudio();
+                if (select.value) {
+                    if (radioAudio.src !== select.value) {
+                        radioAudio.src = select.value;
+                    }
+                    radioAudio.play();
+                    btnPlay.classList.add('active');
+                    btnStop.classList.remove('active');
+                }
+            });
+
+            btnStop.addEventListener('click', () => {
+                radioAudio.pause();
+                btnPlay.classList.remove('active');
+                btnStop.classList.add('active');
+                setTimeout(() => btnStop.classList.remove('active'), 100);
+            });
+
+            volSlider.addEventListener('input', (e) => {
+                radioAudio.volume = e.target.value;
+            });
+
+            desktop.appendChild(clone);
+        }
+
+        createRadioWindow(); // Initialize UI
+
+        // ==========================================
+        // 3. Three.js Scene Setup (Existing Code)
+        // ==========================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#777777');
+        
+        const GAME_RESOLUTION = 240; 
+        const aspect = window.innerWidth / window.innerHeight;
+        
+        let frustumSize = 45;
+        const camera = new THREE.OrthographicCamera(-frustumSize * aspect / 2, frustumSize * aspect / 2, frustumSize / 2, -frustumSize / 2, 1, 1000);
+        
+        let cameraTarget = new THREE.Vector3(0, 0, 0);
+        let cameraTheta = Math.PI / 4; 
+        let cameraPhi = Math.PI / 2.5; 
+        const cameraRadius = 100;
+
+        function updateCameraPosition() {
+            camera.position.x = cameraTarget.x + cameraRadius * Math.sin(cameraPhi) * Math.sin(cameraTheta);
+            camera.position.y = cameraTarget.y + cameraRadius * Math.cos(cameraPhi);
+            camera.position.z = cameraTarget.z + cameraRadius * Math.sin(cameraPhi) * Math.cos(cameraTheta);
+            camera.lookAt(cameraTarget);
+            camera.updateProjectionMatrix();
+        }
+        updateCameraPosition();
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+        renderer.setSize(GAME_RESOLUTION * aspect, GAME_RESOLUTION);
+        renderer.setPixelRatio(1);
+        container.appendChild(renderer.domElement);
+
+        // Dynamic Canvas for Trails
+        const arenaSize = 250; 
+        const trailCanvas = document.createElement('canvas');
+        trailCanvas.width = 1024; trailCanvas.height = 1024;
+        const trailCtx = trailCanvas.getContext('2d');
+        trailCtx.imageSmoothingEnabled = false; 
+        trailCtx.fillStyle = 'black'; 
+        trailCtx.fillRect(0, 0, trailCanvas.width, trailCanvas.height);
+        
+        const trailTex = new THREE.CanvasTexture(trailCanvas);
+        trailTex.magFilter = THREE.NearestFilter; 
+        trailTex.minFilter = THREE.NearestFilter;
+        trailTex.flipY = false;
+
+        function paintTrail(worldX, worldZ) {
+            const px = Math.floor(((worldX + arenaSize / 2) / arenaSize) * trailCanvas.width);
+            const py = Math.floor(((worldZ + arenaSize / 2) / arenaSize) * trailCanvas.height);
+            trailCtx.fillStyle = 'white';
+            const radius = 5;
+            for (let i = -radius; i <= radius; i++) {
+                for (let j = -radius; j <= radius; j++) {
+                    if (i*i + j*j <= radius*radius + 2) { 
+                        trailCtx.fillRect(px + i, py + j, 1, 1);
+                    }
+                }
+            }
+            trailTex.needsUpdate = true;
+        }
+
+        // Shaders & Materials (Unchanged)
+        const staticLightDir = new THREE.Vector3(1, 2, 1).normalize();
+        const baseUniforms = {
+            u_lightDir: { value: staticLightDir },
+            u_c1: { value: new THREE.Color('#FFFFFF') },
+            u_c2: { value: new THREE.Color('#F0F0F0') },
+            u_c3: { value: new THREE.Color('#E0E0E0') },
+            u_c4: { value: new THREE.Color('#C8C8C8') },
+            u_c5: { value: new THREE.Color('#A0A0A0') },
+            u_c6: { value: new THREE.Color('#777777') },
+            u_colorOutline: { value: new THREE.Color('#333333') },
+            u_time: { value: 0.0 },
+            u_pixelSize: { value: 1.0 }
+        };
+
+        const ditherBayer = `
+        float getDither(vec2 pos) {
+            float m_x = mod(pos.x, 4.0); float m_y = mod(pos.y, 4.0); float d = 0.0;
+            if (m_y == 0.0) { if (m_x == 0.0) d = 0.0; else if (m_x == 1.0) d = 8.0; else if (m_x == 2.0) d = 2.0; else d = 10.0; }
+            else if (m_y == 1.0) { if (m_x == 0.0) d = 12.0; else if (m_x == 1.0) d = 4.0; else if (m_x == 2.0) d = 14.0; else d = 6.0; }
+            else if (m_y == 2.0) { if (m_x == 0.0) d = 3.0; else if (m_x == 1.0) d = 11.0; else if (m_x == 2.0) d = 1.0; else d = 9.0; }
+            else { if (m_x == 0.0) d = 15.0; else if (m_x == 1.0) d = 7.0; else if (m_x == 2.0) d = 13.0; else d = 5.0; }
+            return d / 16.0;
+        }`;
+
+        const ditherRamp = `
+            vec3 getShade(float intensity, float dither) {
+                if (intensity < 0.2) return u_c6;
+                else if (intensity < 0.35) return mix(u_c6, u_c5, step(dither, (intensity - 0.2) / 0.15));
+                else if (intensity < 0.5) return mix(u_c5, u_c4, step(dither, (intensity - 0.35) / 0.15));
+                else if (intensity < 0.65) return mix(u_c4, u_c3, step(dither, (intensity - 0.5) / 0.15));
+                else if (intensity < 0.8) return mix(u_c3, u_c2, step(dither, (intensity - 0.65) / 0.15));
+                else if (intensity < 0.95) return mix(u_c2, u_c1, step(dither, (intensity - 0.8) / 0.15));
+                return u_c1;
+            }
+        `;
+
+        const paintColors = `
+            vec3 getDynamicPaint(vec3 wp, float time, float dither) {
+                vec3 colA = vec3(0.0, 0.8, 1.0); 
+                vec3 colB = vec3(1.0, 0.2, 0.6); 
+                vec3 colC = vec3(1.0, 0.8, 0.2); 
+                vec3 colD = vec3(0.3, 0.9, 0.3); 
+                
+                float w1 = (sin(wp.x * 0.08 + time * 1.5) + 1.0) * 0.5;
+                float w2 = (cos(wp.z * 0.08 - time * 1.2) + 1.0) * 0.5;
+                float w3 = (sin((wp.x + wp.z) * 0.05 + time) + 1.0) * 0.5;
+                
+                vec3 mix1 = mix(colA, colB, step(dither, w1));
+                vec3 mix2 = mix(colC, colD, step(dither, w2));
+                return mix(mix1, mix2, step(dither, w3));
+            }
+        `;
+
+        const blobMaterial = new THREE.ShaderMaterial({
+            uniforms: baseUniforms,
+            vertexShader: `varying vec3 vNormal; void main() { vNormal = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+            fragmentShader: `
+                uniform vec3 u_lightDir; uniform float u_pixelSize; 
+                uniform vec3 u_c1; uniform vec3 u_c2; uniform vec3 u_c3; uniform vec3 u_c4; uniform vec3 u_c5; uniform vec3 u_c6; uniform vec3 u_colorOutline;
+                varying vec3 vNormal; ${ditherBayer} ${ditherRamp}
+                void main() {
+                    if (dot(vNormal, vec3(0.0, 0.0, 1.0)) < 0.35) { gl_FragColor = vec4(u_colorOutline, 1.0); return; }
+                    float lightIntensity = dot(vNormal, normalize(u_lightDir)) * 0.5 + 0.5;
+                    float dither = getDither(floor(gl_FragCoord.xy / u_pixelSize));
+                    gl_FragColor = vec4(getShade(lightIntensity, dither), 1.0);
+                }
+            `
+        });
+
+        const blushMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                ...baseUniforms,
+                u_c1: { value: new THREE.Color('#FFB6C1') },
+                u_c2: { value: new THREE.Color('#FF69B4') }, 
+                u_c3: { value: new THREE.Color('#FF1493') }, 
+                u_c4: { value: new THREE.Color('#C71585') },
+                u_c5: { value: new THREE.Color('#900C3F') },
+                u_c6: { value: new THREE.Color('#581845') }
+            },
+            vertexShader: blobMaterial.vertexShader,
+            fragmentShader: blobMaterial.fragmentShader
+        });
+
+        const floorMaterial = new THREE.ShaderMaterial({
+            uniforms: { ...baseUniforms, u_trailMap: { value: trailTex } },
+            vertexShader: `varying vec3 vNormal; varying vec3 vWorldPosition; void main() { vNormal = normalize(normalMatrix * normal); vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+            fragmentShader: `
+                uniform vec3 u_lightDir; uniform sampler2D u_trailMap; uniform float u_time; 
+                uniform vec3 u_c1; uniform vec3 u_c2; uniform vec3 u_c3; uniform vec3 u_c4; uniform vec3 u_c5; uniform vec3 u_c6;
+                varying vec3 vNormal; varying vec3 vWorldPosition; ${ditherBayer} ${ditherRamp} ${paintColors}
+                void main() {
+                    float dither = getDither(floor(vWorldPosition.xz * 2.0));
+                    float dist = length(vWorldPosition.xz) / 180.0;
+                    float lightIntensity = clamp((dot(vNormal, normalize(u_lightDir)) * 0.5 + 0.5) - (dist * 0.5), 0.0, 1.0);
+                    vec3 baseColor = getShade(lightIntensity, dither);
+                    vec3 splotchColor = getDynamicPaint(vWorldPosition, u_time, dither);
+                    
+                    vec2 trailUV = vec2((vWorldPosition.x + 125.0) / 250.0, (vWorldPosition.z + 125.0) / 250.0);
+                    float trailMask = 0.0;
+                    if(trailUV.x >= 0.0 && trailUV.x <= 1.0 && trailUV.y >= 0.0 && trailUV.y <= 1.0) {
+                        trailMask = texture2D(u_trailMap, trailUV).r;
+                    }
+                    gl_FragColor = vec4(mix(baseColor, splotchColor, trailMask), 1.0);
+                }
+            `
+        });
+
+        const particleMaterial = new THREE.ShaderMaterial({
+            uniforms: { ...baseUniforms },
+            vertexShader: `varying vec3 vWorldPosition; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+            fragmentShader: `
+                uniform float u_time; varying vec3 vWorldPosition; ${ditherBayer} ${paintColors}
+                void main() {
+                    float dither = getDither(floor(gl_FragCoord.xy));
+                    gl_FragColor = vec4(getDynamicPaint(vWorldPosition, u_time, dither), 1.0);
+                }
+            `
+        });
+
+        const floorGeo = new THREE.PlaneGeometry(10000, 10000); 
+        const floor = new THREE.Mesh(floorGeo, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        const creatures = [];
+        const geometries = [
+            new THREE.SphereGeometry(2, 32, 32),
+            new THREE.BoxGeometry(3.2, 3.2, 3.2),
+            new THREE.CylinderGeometry(1.8, 1.8, 3.5, 16),
+            new THREE.DodecahedronGeometry(2.2)
+        ];
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+        const eyeGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const blushGeo = new THREE.PlaneGeometry(0.8, 0.4);
+
+        function spawnCreature(x, z) {
+            const creature = {
+                group: new THREE.Group(),
+                velocity: new THREE.Vector3(0, 0, 0),
+                idleTimer: Math.random() * 2 + 0.5,
+                eyeTimer: 0, lookTimer: 0,
+                lookDir: new THREE.Vector2(0, 0),
+                squishTimer: 0, blushTimer: 0,
+                radius: 2.0, isDragged: false,
+                baseScale: 1.0
+            };
+
+            const geo = geometries[Math.floor(Math.random() * geometries.length)];
+            creature.body = new THREE.Mesh(geo, blobMaterial);
+            creature.group.add(creature.body);
+
+            const face = new THREE.Group();
+            creature.eyeL = new THREE.Mesh(eyeGeo, eyeMat); creature.eyeL.position.set(-0.7, 0.5, 1.8);
+            creature.eyeR = new THREE.Mesh(eyeGeo, eyeMat); creature.eyeR.position.set(0.7, 0.5, 1.8);
+            creature.blushL = new THREE.Mesh(blushGeo, blushMaterial); creature.blushL.position.set(-0.7, 0.1, 1.85); creature.blushL.visible = false;
+            creature.blushR = new THREE.Mesh(blushGeo, blushMaterial); creature.blushR.position.set(0.7, 0.1, 1.85); creature.blushR.visible = false;
+
+            face.add(creature.eyeL); face.add(creature.eyeR);
+            face.add(creature.blushL); face.add(creature.blushR);
+            creature.face = face;
+            creature.group.add(face);
+
+            creature.group.position.set(x, 15, z);
+            scene.add(creature.group);
+            creatures.push(creature);
+        }
+
+        spawnCreature(0, 0);
+
+        document.getElementById('spawn-btn').addEventListener('click', () => {
+            spawnCreature((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
+        });
+
+        const particles = [];
+        const partGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        function spawnParticles(pos, vel) {
+            for (let i = 0; i < 6; i++) {
+                const p = new THREE.Mesh(partGeo, particleMaterial);
+                p.position.copy(pos); p.position.y -= 1.0; 
+                p.velocity = new THREE.Vector3((Math.random() - 0.5) * 15 + vel.x * 0.3, Math.random() * 15 + 5, (Math.random() - 0.5) * 15 + vel.z * 0.3);
+                p.life = 1.0; scene.add(p); particles.push(p);
+            }
+        }
+
+        // ==========================================
+        // 4. Controls & Interaction
+        // ==========================================
+        const gravity = -100.0;
+        const maxVelocity = 120.0;
+        const bounceFactor = 0.6;
+        const friction = 0.75;
+        const floorY = 0;
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        let draggedCreature = null;
+        let dragPlane = new THREE.Plane();
+        let previousMousePos = new THREE.Vector3();
+        let isPanning = false;
+        let isOrbiting = false;
+        let previousScreenMouse = { x: 0, y: 0 };
+
+        window.addEventListener('contextmenu', e => e.preventDefault()); 
+
+        document.getElementById('canvas-container').addEventListener('mousedown', (event) => {
+            previousScreenMouse = { x: event.clientX, y: event.clientY };
+            
+            if (event.button === 2) { 
+                isOrbiting = true; return;
+            }
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            
+            const groupMeshes = creatures.map(c => c.group);
+            const intersects = raycaster.intersectObjects(groupMeshes, true);
+            
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                while(obj.parent && obj.parent !== scene) obj = obj.parent;
+                draggedCreature = creatures.find(c => c.group === obj);
+                
+                if (draggedCreature) {
+                    draggedCreature.isDragged = true;
+                    const cameraDir = new THREE.Vector3();
+                    camera.getWorldDirection(cameraDir);
+                    dragPlane.setFromNormalAndCoplanarPoint(cameraDir.negate(), draggedCreature.group.position);
+                    raycaster.ray.intersectPlane(dragPlane, previousMousePos);
+                    draggedCreature.velocity.set(0, 0, 0);
+                }
+            } else {
+                isPanning = true;
+            }
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            if (isOrbiting) {
+                const dx = event.clientX - previousScreenMouse.x;
+                const dy = event.clientY - previousScreenMouse.y;
+                previousScreenMouse = { x: event.clientX, y: event.clientY };
+                
+                cameraTheta -= dx * 0.01;
+                cameraPhi -= dy * 0.01;
+                cameraPhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraPhi));
+                updateCameraPosition();
+            } else if (draggedCreature) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const currentPos = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(dragPlane, currentPos)) {
+                    draggedCreature.velocity.copy(currentPos).sub(previousMousePos).multiplyScalar(60); 
+                    draggedCreature.group.position.copy(currentPos);
+                    previousMousePos.copy(currentPos);
+                }
+            } else if (isPanning) {
+                const dx = event.clientX - previousScreenMouse.x; 
+                const dy = event.clientY - previousScreenMouse.y;
+                previousScreenMouse = { x: event.clientX, y: event.clientY };
+                
+                const panSpeed = frustumSize / window.innerHeight; 
+                const oldPos = camera.position.clone();
+                camera.translateX(-dx * panSpeed); 
+                camera.translateY(dy * panSpeed);
+                const delta = camera.position.clone().sub(oldPos);
+                cameraTarget.add(delta);
+                updateCameraPosition();
+            }
+        });
+
+        window.addEventListener('mouseup', (event) => { 
+            if (event.button === 2) isOrbiting = false;
+            
+            if(draggedCreature) {
+                if(draggedCreature.velocity.length() > maxVelocity) {
+                    draggedCreature.velocity.setLength(maxVelocity);
+                }
+                draggedCreature.isDragged = false;
+                draggedCreature = null; 
+            }
+            isPanning = false; 
+        });
+
+        window.addEventListener('wheel', (event) => {
+            frustumSize += event.deltaY * 0.05;
+            frustumSize = Math.max(15, Math.min(frustumSize, 150));
+            camera.left = -frustumSize * aspect / 2; camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2; camera.bottom = -frustumSize / 2;
+            camera.updateProjectionMatrix();
+        });
+
+        // ==========================================
+        // 5. Animation, Physics & AUDIO REACTIVITY
+        // ==========================================
+        const clock = new THREE.Clock();
+
+        function updateCreature(c, dt, time) {
+            c.eyeTimer -= dt;
+            if (c.eyeTimer <= 0) {
+                const r = Math.random();
+                if (r < 0.1) { c.eyeL.scale.set(1, 0.1, 1); c.eyeR.scale.set(1, 0.1, 1); c.eyeTimer = 0.15; }
+                else if (r < 0.2) { c.eyeL.scale.set(1, 0.3, 1); c.eyeR.scale.set(1, 0.3, 1); c.eyeTimer = 2.0; }
+                else if (r < 0.3) { c.eyeL.scale.set(1.4, 1.4, 1); c.eyeR.scale.set(1.4, 1.4, 1); c.eyeTimer = 1.5; }
+                else { c.eyeL.scale.set(1, 1, 1); c.eyeR.scale.set(1, 1, 1); c.eyeTimer = Math.random() * 3 + 1; }
+            }
+
+            c.lookTimer -= dt;
+            if (c.lookTimer <= 0) {
+                if (Math.random() < 0.3) {
+                    c.lookDir.set(0, 0); 
+                } else {
+                    const dirIndex = Math.floor(Math.random() * 16);
+                    const angle = dirIndex * (Math.PI / 8);
+                    const radius = 0.25;
+                    c.lookDir.set(Math.cos(angle) * radius, Math.sin(angle) * radius);
+                }
+                c.lookTimer = Math.random() * 2 + 1.0;
+            }
+            
+            const targetLx = -0.7 + c.lookDir.x; const targetLy = 0.5 + c.lookDir.y;
+            const targetRx = 0.7 + c.lookDir.x; const targetRy = 0.5 + c.lookDir.y;
+            c.eyeL.position.x += (targetLx - c.eyeL.position.x) * 0.1; c.eyeL.position.y += (targetLy - c.eyeL.position.y) * 0.1;
+            c.eyeR.position.x += (targetRx - c.eyeR.position.x) * 0.1; c.eyeR.position.y += (targetRy - c.eyeR.position.y) * 0.1;
+
+            // Audio Reactivity: Make creatures blush to the beat
+            if (c.blushTimer > 0 || audioData > 180) {
+                c.blushTimer -= dt;
+                c.blushL.visible = true; c.blushR.visible = true;
+            } else {
+                c.blushL.visible = false; c.blushR.visible = false;
+            }
+
+            if (!c.isDragged) {
+                c.velocity.y += gravity * dt;
+                c.group.position.addScaledVector(c.velocity, dt);
+                
+                const bounds = (arenaSize / 2) - c.radius;
+                if(Math.abs(c.group.position.x) > bounds) { c.group.position.x = Math.sign(c.group.position.x) * bounds; c.velocity.x *= -bounceFactor; }
+                if(Math.abs(c.group.position.z) > bounds) { c.group.position.z = Math.sign(c.group.position.z) * bounds; c.velocity.z *= -bounceFactor; }
+
+                c.body.rotation.z -= (c.velocity.x * dt) * 0.2; c.body.rotation.x += (c.velocity.z * dt) * 0.2;
+                c.face.position.y = Math.sin(time * 10 + c.group.id) * 0.05;
+
+                if (c.group.position.y <= floorY + c.radius) {
+                    c.group.position.y = floorY + c.radius;
+                    
+                    if (Math.abs(c.velocity.y) > 8.0 || c.velocity.lengthSq() > 20.0) {
+                        paintTrail(c.group.position.x, c.group.position.z);
+                        spawnParticles(c.group.position, c.velocity);
+                        c.squishTimer = 0.05; 
+                    }
+
+                    c.velocity.y *= -bounceFactor;
+                    c.velocity.x *= friction; c.velocity.z *= friction;
+                    
+                    if (Math.abs(c.velocity.y) < 1.0) {
+                        c.velocity.y = 0;
+                        c.velocity.x *= 0.8; c.velocity.z *= 0.8;
+                    }
+
+                    if (c.velocity.lengthSq() < 2.0) {
+                        c.idleTimer -= dt;
+                        if (c.idleTimer <= 0) {
+                            const angle = Math.random() * Math.PI * 2;
+                            // Audio Reactivity: Jump higher on heavy bass
+                            const jumpBoost = (audioData / 255) * 20;
+                            const speed = Math.random() * 15 + 10;
+                            c.velocity.set(Math.cos(angle) * speed, Math.random() * 15 + 20 + jumpBoost, Math.sin(angle) * speed);
+                            c.idleTimer = Math.random() * 1.5 + 0.5;
+                        }
+                    }
+                }
+
+                let stretch = 1.0; let squish = 1.0;
+                if (c.squishTimer > 0) {
+                    c.squishTimer -= dt;
+                    squish = 1.5; stretch = 0.5;
+                } else {
+                    const velY = Math.max(-40, Math.min(40, c.velocity.y));
+                    stretch = 1.0 + Math.abs(velY * 0.015);
+                    squish = 1.0 / stretch;
+                }
+                
+                // Audio Reactivity: Scale pump based on volume
+                const audioScale = 1.0 + (audioData / 255) * 0.3;
+                c.group.scale.x += ((squish * audioScale) - c.group.scale.x) * 0.5;
+                c.group.scale.y += ((stretch * audioScale) - c.group.scale.y) * 0.5;
+                c.group.scale.z += ((squish * audioScale) - c.group.scale.z) * 0.5;
+
+            } else {
+                c.idleTimer = 1.5; c.eyeL.scale.set(1.5, 1.5, 1); c.eyeR.scale.set(1.5, 1.5, 1); c.eyeTimer = 0.5;
+                c.lookDir.set(0, 0); 
+                c.group.scale.set(1,1,1);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.05);
+            const time = clock.getElapsedTime();
+
+            // Process Audio Data
+            if (analyser && !radioAudio.paused) {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                // Grab lower frequencies (bass) for reactivity
+                for (let i = 0; i < 30; i++) { sum += dataArray[i]; }
+                audioData = sum / 30; 
+                // Push audio data into shader time to speed up color cycles on beat
+                baseUniforms.u_time.value = time + (audioData / 255) * 0.5;
+            } else {
+                audioData *= 0.9; // Smooth falloff when paused
+                baseUniforms.u_time.value = time;
+            }
+
+            creatures.forEach(c => updateCreature(c, dt, time));
+
+            for (let i = 0; i < creatures.length; i++) {
+                for (let j = i + 1; j < creatures.length; j++) {
+                    const c1 = creatures[i]; const c2 = creatures[j];
+                    const dist = c1.group.position.distanceTo(c2.group.position);
+                    const minDist = c1.radius + c2.radius;
+                    
+                    if (dist < minDist) {
+                        const dir = new THREE.Vector3().subVectors(c1.group.position, c2.group.position).normalize();
+                        const overlap = minDist - dist;
+                        c1.group.position.addScaledVector(dir, overlap * 0.5);
+                        c2.group.position.addScaledVector(dir, -overlap * 0.5);
+
+                        const relVel = new THREE.Vector3().subVectors(c1.velocity, c2.velocity);
+                        const impulse = dir.clone().multiplyScalar(relVel.dot(dir) * 0.8);
+                        c1.velocity.sub(impulse); c2.velocity.add(impulse);
+
+                        c1.squishTimer = 0.08; c2.squishTimer = 0.08; 
+                        c1.blushTimer = 2.5; c2.blushTimer = 2.5;
+                    }
+                }
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.velocity.y += gravity * dt; p.position.addScaledVector(p.velocity, dt);
+                p.rotation.x += dt * 5; p.rotation.y += dt * 5;
+                
+                if (p.position.y <= floorY + 0.4) {
+                    p.position.y = floorY + 0.4; p.velocity.set(0,0,0);
+                    p.life -= dt * 3.0; p.scale.setScalar(p.life);
+                }
+                if (p.life <= 0) { scene.remove(p); particles.splice(i, 1); }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            const newAspect = window.innerWidth / window.innerHeight;
+            camera.aspect = newAspect;
+            camera.left = -frustumSize * newAspect / 2; camera.right = frustumSize * newAspect / 2;
+            camera.updateProjectionMatrix();
+            renderer.setSize(GAME_RESOLUTION * newAspect, GAME_RESOLUTION);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
