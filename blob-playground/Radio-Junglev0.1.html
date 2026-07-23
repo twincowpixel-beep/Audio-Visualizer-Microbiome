@@ -1,0 +1,2847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Radio Jungle v0.1</title>
+    <style>
+        @font-face {
+            font-family: "Saturno";
+            src: url("fonts/saturno.ttf") format("truetype");
+            font-display: swap;
+        }
+
+        :root {
+            /* 1980s terminal / early-OS scheme: 1-bit Macintosh-style windows
+               (white, hard black borders, striped titlebars, solid offset
+               shadows) with green-phosphor CRT accents. */
+            --os-white:   #ffffff;
+            --os-black:   #111111;
+            --os-gray:    #bfbfbf;
+            --term-bg:    #0a0f0a;   /* CRT panel */
+            --term-green: #33ff66;   /* phosphor */
+            --term-dim:   #1d8f44;   /* phosphor on white */
+
+            --eb-fill:     var(--os-white);
+            --eb-fill-2:   #f2f2f2;
+            --eb-fill-lo:  var(--term-bg);
+            --eb-outline:  var(--os-black);
+            --eb-frame:    var(--os-black);
+            --eb-frame-hi: var(--os-black);
+            --eb-frame-lo: var(--os-black);
+            --eb-ink:      var(--os-black);
+            --eb-muted:    #5a5a5a;
+            --green:       var(--term-green);
+
+            /* Solid offset shadow — the early-OS look, not a soft blur. */
+            --box-shadow: drop-shadow(5px 5px 0 var(--os-black));
+
+            --font-pixel: "Saturno", "JetBrains Mono", "Menlo", monospace;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #ffffff;
+            font-family: var(--font-pixel);
+            letter-spacing: 0.08em;
+            user-select: none;
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        #canvas-container { width: 100vw; height: 100vh; cursor: grab; }
+        #canvas-container:active { cursor: grabbing; }
+        #canvas-container canvas {
+            width: 100vw !important;
+            height: 100vh !important;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        .pf-content { position: relative; z-index: 1; }
+        .pf-label { position: relative; z-index: 1; display: inline-block; pointer-events: none; }
+
+        #ui-overlay {
+            position: absolute;
+            bottom: 20px; right: 20px;
+            z-index: 10;
+            display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
+        }
+        /* Controls live in a drop-up menu; only the ☰ button shows when closed. */
+        #menu-panel {
+            display: none; flex-direction: column; align-items: flex-end; gap: 10px;
+        }
+        #menu-panel.open { display: flex; }
+        /* Controls readout = a little green-phosphor CRT terminal panel. */
+        #controls-help {
+            padding: 12px 16px;
+            color: var(--term-green);
+            text-shadow: 0 0 4px rgba(51,255,102,0.45);
+            font: 13px var(--font-pixel);
+            letter-spacing: 0.06em;
+            max-width: 360px; text-align: right; line-height: 1.5;
+            filter: var(--box-shadow);
+        }
+        #controls-help > * { position: relative; z-index: 1; }
+        /* Faint CRT scanlines over the terminal panel. */
+        #controls-help::after {
+            content: ""; position: absolute; inset: 4px; z-index: 2; pointer-events: none;
+            background: repeating-linear-gradient(to bottom, rgba(51,255,102,0.06) 0 1px, transparent 1px 3px);
+        }
+
+        .eb-btn {
+            position: relative; background: transparent; border: none;
+            padding: 12px 20px; color: var(--os-black);
+            font: 16px var(--font-pixel); letter-spacing: 0.06em;
+            cursor: pointer; overflow: visible;
+            filter: drop-shadow(4px 4px 0 var(--os-black));
+        }
+        .eb-btn > * { position: relative; z-index: 1; }
+        .eb-btn:hover { filter: drop-shadow(4px 4px 0 var(--os-black)) invert(0.06); }
+        .eb-btn:active { transform: translate(2px, 2px); filter: drop-shadow(2px 2px 0 var(--os-black)); }
+
+        /* Spawn Friend = a framed pixel button showing an ANIMATED bouncing
+           creature (frames drawn in JS); it visibly depresses on click. */
+        .creature-btn {
+            width: 64px; height: 64px; border-radius: 12px; padding: 0;
+            border: 3px solid var(--os-black);
+            background-color: #cfe6ff;
+            background-repeat: no-repeat; background-position: center; background-size: 100% 100%;
+            box-shadow: 4px 4px 0 var(--os-black), inset 0 2px 0 rgba(255,255,255,0.7), inset 0 -3px 0 rgba(0,0,0,0.14);
+            image-rendering: pixelated; cursor: pointer;
+            transition: transform 0.06s ease-out, box-shadow 0.06s ease-out;
+        }
+        .creature-btn:hover { filter: brightness(1.06); }
+        .creature-btn:active {
+            transform: translate(3px, 3px);      /* press in */
+            box-shadow: 1px 1px 0 var(--os-black), inset 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* ------------ WINDOW CHROME (Windows-style) ----------------- */
+        /* Late-90s Windows point-and-click game panel: chunky black-bordered box,
+           glossy grey face (top-lit shine), solid offset drop shadow — matches
+           the main pixel buttons. */
+        .win {
+            position: fixed;
+            left: 16px; bottom: 16px;
+            width: 380px;
+            z-index: 30;
+            background: linear-gradient(#fdfdff 0%, #e7ebf2 48%, #d3d9e3 100%);
+            border: 3px solid var(--os-black);
+            border-radius: 11px;
+            box-shadow: 5px 5px 0 var(--os-black),
+                        inset 0 2px 0 rgba(255,255,255,0.9),
+                        inset 0 -2px 0 rgba(0,0,0,0.12);
+            display: flex; flex-direction: column;
+            overflow: hidden;
+            min-width: 240px; min-height: 52px;
+        }
+        /* Glossy coloured titlebar (blue "active window" gradient with shine). */
+        .win-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px;
+            background: linear-gradient(#6ea8e6 0%, #4f86cf 50%, #3d6fb8 100%);
+            border-bottom: 3px solid var(--os-black);
+            box-shadow: inset 0 2px 0 rgba(255,255,255,0.55);
+            padding: 6px 8px 6px 11px;
+            cursor: grab;
+        }
+        .win.dragging .win-bar { cursor: grabbing; }
+        .win-title {
+            color: #ffffff; font: 13px var(--font-pixel); letter-spacing: 0.10em;
+            white-space: nowrap; text-shadow: 1px 1px 0 rgba(0,0,0,0.45);
+        }
+        .win-controls { display: flex; gap: 6px; padding: 0 2px; }
+        .win-controls button {
+            width: 20px; height: 18px; padding: 0;
+            border: 2px solid var(--os-black);
+            background: linear-gradient(#fdfdff, #cfd6e0);
+            color: var(--os-black);
+            font: 12px var(--font-pixel); line-height: 1;
+            cursor: pointer; border-radius: 4px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+        }
+        .win-controls button:hover { background: var(--os-black); color: var(--os-white); }
+        .win-body { padding: 12px 14px 14px; overflow: auto; background: transparent; }
+        .win .radio-title { display: none; }           /* titlebar already names it */
+        .win.min .win-body, .win.min .win-resize { display: none; }
+        .win-resize {
+            height: 14px; cursor: nwse-resize;
+            border-top: 1px solid var(--os-black);
+            background: linear-gradient(135deg, transparent 55%, var(--os-black) 55% 63%, transparent 63% 74%, var(--os-black) 74% 82%, transparent 82%);
+            background-position: right center; background-repeat: no-repeat; background-size: 22px 14px;
+        }
+
+        /* Palette window rows */
+        #palette-presets { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+        .pal-preset {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 6px 9px; cursor: pointer;
+            border: 2px solid var(--os-black); background: var(--os-white);
+            font: 13px var(--font-pixel); letter-spacing: 0.06em;
+        }
+        .pal-preset.active { background: var(--os-black); color: var(--os-white); }
+        .pal-swatches { display: flex; gap: 3px; }
+        .pal-swatches i { width: 13px; height: 13px; border: 1px solid var(--os-black); }
+        .pal-preset.active .pal-swatches i { border-color: var(--os-white); }
+        /* Editable swatch = a tiny colour input that looks like a swatch chip. */
+        .pal-swatch-edit {
+            width: 15px; height: 15px; padding: 0; border: 1px solid var(--os-black);
+            background: none; cursor: pointer; border-radius: 0; -webkit-appearance: none; appearance: none;
+        }
+        .pal-swatch-edit::-webkit-color-swatch-wrapper { padding: 0; }
+        .pal-swatch-edit::-webkit-color-swatch { border: none; }
+        .pal-preset.active .pal-swatch-edit { border-color: var(--os-white); }
+        #pal-custom-add {
+            width: 26px; height: 26px; padding: 0; border: 2px solid var(--os-black);
+            background: var(--os-white); font: 15px var(--font-pixel); cursor: pointer; line-height: 1;
+        }
+        #pal-custom-add:hover { background: var(--os-black); color: var(--os-white); }
+        .pal-custom-row {
+            display: flex; align-items: center; gap: 6px;
+            font: 13px var(--font-pixel); letter-spacing: 0.06em;
+        }
+        .pal-custom-row input[type="color"] {
+            width: 30px; height: 26px; padding: 0; border: 2px solid var(--os-black);
+            background: var(--os-white); cursor: pointer;
+        }
+        #pal-custom-use {
+            padding: 4px 10px; border: 2px solid var(--os-black); background: var(--os-white);
+            font: 13px var(--font-pixel); cursor: pointer;
+        }
+        #pal-custom-use:hover { background: var(--os-black); color: var(--os-white); }
+
+        /* Minimalist radio UI (boombox click) */
+        #radio-panel { left: 20px; top: 20px; right: auto; bottom: auto; width: 264px; }
+        .rp-dial {
+            height: 44px; margin-bottom: 12px;
+            background: var(--term-bg); border: 2px solid var(--os-black);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--term-green); font: 12px var(--font-pixel); letter-spacing: 0.06em;
+            text-shadow: 0 0 4px rgba(51,255,102,0.5);
+            box-shadow: inset 0 0 12px rgba(51,255,102,0.12);
+            padding: 0 8px; text-align: center; overflow: hidden;
+        }
+        .rp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .rp-btn {
+            padding: 7px 11px; border: 2px solid var(--os-black); background: var(--os-white);
+            color: var(--os-black); font: 14px var(--font-pixel); cursor: pointer; letter-spacing: 0.05em;
+        }
+        .rp-btn:hover { background: var(--os-black); color: var(--os-white); }
+        .rp-tune { flex: 1; }
+        .rp-lbl { font: 12px var(--font-pixel); letter-spacing: 0.1em; }
+        #rp-vol { flex: 1; min-width: 0; accent-color: #33aa55; }
+        .rp-status { color: var(--term-dim); font: 11px var(--font-pixel); text-transform: uppercase; white-space: nowrap; }
+
+        #radio-reopen {
+            position: fixed; left: 16px; bottom: 16px; z-index: 30;
+            display: none;
+            padding: 10px 16px; background: transparent; border: none;
+            color: var(--eb-ink); font: 14px var(--font-pixel); cursor: pointer;
+            filter: var(--box-shadow);
+        }
+        #radio-reopen > * { position: relative; z-index: 1; }
+
+        /* ------------ RADIO DOCK BUBBLE (top-right) ----------------- */
+        /* A rounded pixel window you drag the radio into; it jelly-absorbs the
+           boombox and shows it frozen as a 3D sprite (rendered behind, into a
+           scissored viewport). Interior is transparent so that render shows. */
+        /* The bubble is a chunky glossy BEZEL with a TRANSPARENT centre so the
+           scissored 3D radio sprite (rendered on the canvas behind) shows through
+           its recessed "screen". The bezel is built from stacked box-shadows so
+           the middle stays see-through. */
+        /* The dock is now a floating LOW-RES 3D SPHERE rendered on the canvas; the
+           DOM element is just a transparent hit-area holding the magnet button,
+           the hint, and the note particles. */
+        #radio-bubble {
+            position: fixed; top: 16px; right: 16px; z-index: 32;
+            width: 140px; height: 140px;
+            background: transparent;
+            image-rendering: pixelated;
+            cursor: pointer;
+        }
+        #radio-bubble.docked { cursor: pointer; }
+        #radio-bubble.absorb { animation: bubble-jelly 0.6s cubic-bezier(.3,1.4,.5,1); }
+        @keyframes bubble-jelly {
+            0%   { transform: scale(1, 1); }
+            20%  { transform: scale(1.26, 0.74); }
+            40%  { transform: scale(0.80, 1.22); }
+            60%  { transform: scale(1.12, 0.9); }
+            80%  { transform: scale(0.96, 1.05); }
+            100% { transform: scale(1, 1); }
+        }
+        #bubble-hint {
+            position: absolute; bottom: 7px; left: 0; right: 0; text-align: center;
+            font: 10px var(--font-pixel); color: var(--eb-ink); letter-spacing: 0.06em;
+            pointer-events: none; opacity: 0.7; text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+        }
+        /* Lasso button — a little round pixel knob on the bubble's corner. */
+        /* Magnet button — a pixel-art magnet (drawn in JS) on a metal chip. */
+        #lasso-btn {
+            position: absolute; top: -13px; left: -13px; z-index: 3;
+            width: 36px; height: 36px; border-radius: 9px; padding: 0;
+            border: 3px solid var(--os-black);
+            background: #e2e7ef no-repeat center; background-size: 24px 24px;
+            box-shadow: 3px 3px 0 var(--os-black), inset 0 2px 2px rgba(255,255,255,0.85);
+            cursor: pointer; font-size: 0; line-height: 0;
+            image-rendering: pixelated;
+        }
+        #lasso-btn:hover { filter: brightness(1.07); }
+        #lasso-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--os-black), inset 0 2px 3px rgba(0,0,0,0.4); }
+        #bubble-notes { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+        .bnote {
+            position: absolute; bottom: 22px;
+            font: 18px var(--font-pixel); color: #2fe37a;
+            text-shadow: 0 0 5px rgba(47,227,122,0.7);
+            image-rendering: pixelated;
+            animation: bnote-float 1.6s linear forwards;
+        }
+        @keyframes bnote-float {
+            0%   { transform: translate(0, 0) scale(0.9) rotate(0deg); opacity: 0; }
+            18%  { opacity: 1; }
+            100% { transform: translate(var(--nx, 0), -78px) scale(1.25) rotate(var(--nr, 12deg)); opacity: 0; }
+        }
+
+        /* ------------ RADIO WIDGET ---------------------------------- */
+        .radio { display: flex; flex-direction: column; gap: 10px; }
+        .radio .row {
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            font: 14px var(--font-pixel); color: var(--eb-muted);
+        }
+        .radio select {
+            flex: 1; min-width: 0;
+            background: var(--os-white); border: 2px solid var(--os-black);
+            color: var(--os-black); padding: 6px 9px; border-radius: 0;
+            font: 14px var(--font-pixel); letter-spacing: 0.06em;
+        }
+        .radio button {
+            padding: 6px 13px; border: none; background: transparent;
+            color: var(--os-black); cursor: pointer;
+            font: 14px var(--font-pixel); letter-spacing: 0.06em; position: relative;
+        }
+        .radio button > * { position: relative; z-index: 1; }
+        .radio button:hover { filter: invert(0.06); }
+        /* The oscilloscope is the CRT: green phosphor trace on near-black. */
+        .radio .scope {
+            display: block; width: 100%; height: 60px;
+            background: var(--term-bg); border: 2px solid var(--os-black);
+            border-radius: 0; box-shadow: inset 0 0 14px rgba(51,255,102,0.12);
+        }
+        .radio .status { color: var(--term-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+        .radio .info   { color: var(--eb-muted); }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="ui-overlay" class="ui-block">
+        <div id="menu-panel">
+            <button id="spawn-btn" class="creature-btn" title="Spawn Friend"></button>
+            <button id="clear-btn" class="eb-btn">Clear Space</button>
+            <button id="palette-btn" class="eb-btn">Palette</button>
+            <button id="bg-btn" class="eb-btn">BG: Sky</button>
+            <button id="weather-btn" class="eb-btn">Weather: Clear</button>
+            <button id="view-btn" class="eb-btn">View: Free</button>
+            <button id="director-btn" class="eb-btn">Director Mode</button>
+        </div>
+        <button id="menu-btn" class="eb-btn">☰ Menu</button>
+    </div>
+
+    <!-- Palette picker window -->
+    <div id="palette-win" class="win ui-block" style="display:none; left:auto; right:16px; bottom:76px; width:280px;">
+        <div class="win-bar">
+            <span class="win-title">◉ PALETTE</span>
+            <span class="win-controls">
+                <button id="palette-close" title="close">✕</button>
+            </span>
+        </div>
+        <div class="win-body" id="palette-body">
+            <div id="palette-presets"></div>
+            <div class="pal-custom-row">
+                <span class="pal-custom-label">Custom:</span>
+                <input type="color" class="pal-custom" value="#4a90d9">
+                <input type="color" class="pal-custom" value="#e64a8a">
+                <input type="color" class="pal-custom" value="#f0c040">
+                <button id="pal-custom-add" title="add a colour">＋</button>
+                <button id="pal-custom-use" title="use these colors">Use</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Draggable / minimizable / resizable radio window -->
+    <div id="radio-win" class="win ui-block">
+        <div class="win-bar">
+            <span class="win-title">◉ RADIO</span>
+            <span class="win-controls">
+                <button class="win-min" title="minimize">▁</button>
+                <button class="win-close" title="close">✕</button>
+            </span>
+        </div>
+        <div class="win-body" id="radio-body"></div>
+        <div class="win-resize" title="resize"></div>
+    </div>
+    <button id="radio-reopen" class="ui-block"><span class="pf-label">◉ RADIO</span></button>
+
+    <!-- Minimalist radio UI — opens when you click the boombox -->
+    <div id="radio-panel" class="win ui-block" style="display:none;">
+        <div class="win-bar">
+            <span class="win-title">◉ RADIO</span>
+            <span class="win-controls"><button id="rp-close" title="close">✕</button></span>
+        </div>
+        <div class="win-body">
+            <div class="rp-dial"><span id="rp-name">— tap TUNE —</span></div>
+            <div class="rp-row">
+                <button id="rp-prev" class="rp-btn" title="previous station">◀</button>
+                <button id="rp-tune" class="rp-btn rp-tune">▶ TUNE</button>
+                <button id="rp-next" class="rp-btn" title="next station">▶</button>
+            </div>
+            <div class="rp-row rp-knobs">
+                <span class="rp-lbl">VOL</span>
+                <input type="range" id="rp-vol" min="0" max="1" step="0.01" value="0.8">
+                <span id="rp-status" class="rp-status">OFF AIR</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Radio dock bubble: drag the boombox in here to freeze it as a sprite -->
+    <div id="radio-bubble" class="ui-block empty" title="drag the radio in here to dock it">
+        <button id="lasso-btn" title="lasso the radio in / eject">➰</button>
+        <div id="bubble-notes"></div>
+        <span id="bubble-hint">▽ dock radio</span>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script src="js/pixel-frame.js"></script>
+    <script src="js/audio-engine.js"></script>
+    <script src="js/radio.js"></script>
+    <script src="js/audio-reactive.js"></script>
+
+    <script>
+        // --- 1. Scene & free-fly perspective camera ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = null; // dithered backdrop drawn in its own pass
+
+        // Mobile gets a lighter setup (lower render res, cheaper shadows, fewer props).
+        const IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                          (('ontouchstart' in window) && Math.min(window.innerWidth, window.innerHeight) < 820);
+        
+        // Slightly higher base render resolution for a finer dither scale
+        const RENDER_H = IS_MOBILE ? 320 : 420;
+        let aspect = window.innerWidth / window.innerHeight;
+
+        const camera = new THREE.PerspectiveCamera(62, aspect, 0.5, 6000);
+        const camPos = new THREE.Vector3(0, 30, 86);
+        let camYaw = Math.PI;      // face -Z (toward the arena)
+        let camPitch = -0.30;      // look slightly down
+        let camFov = 62;
+        const _lookDir = new THREE.Vector3();
+        const _fwd = new THREE.Vector3();
+        const _right = new THREE.Vector3();
+
+        function lookVectors() {
+            const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
+            _lookDir.set(Math.sin(camYaw) * cp, sp, Math.cos(camYaw) * cp);
+            _fwd.set(Math.sin(camYaw), 0, Math.cos(camYaw));           // horizontal forward
+            _right.set(-Math.cos(camYaw), 0, Math.sin(camYaw));        // horizontal right
+        }
+        function updateCamera() {
+            lookVectors();
+            camera.position.copy(camPos);
+            camera.lookAt(camPos.x + _lookDir.x, camPos.y + _lookDir.y, camPos.z + _lookDir.z);
+        }
+        updateCamera();
+
+        // --- Optional ISOMETRIC view (ortho orbit/pan/zoom, ported from 0.6) ---
+        let viewMode = 'free';                 // 'free' (perspective) | 'iso' (ortho)
+        let isoFrustum = 96;
+        const isoCam = new THREE.OrthographicCamera(-isoFrustum * aspect / 2, isoFrustum * aspect / 2, isoFrustum / 2, -isoFrustum / 2, 1, 4000);
+        const isoTarget = new THREE.Vector3(0, 6, 0);
+        let isoTheta = Math.PI / 4, isoPhi = Math.PI / 3.3;
+        const isoRadius = 380;                 // kept < skydome radius so the dome still wraps
+        function applyIsoFrustum(){
+            isoCam.left = -isoFrustum * aspect / 2; isoCam.right = isoFrustum * aspect / 2;
+            isoCam.top = isoFrustum / 2; isoCam.bottom = -isoFrustum / 2; isoCam.updateProjectionMatrix();
+        }
+        function updateIsoCam(){
+            isoCam.position.set(
+                isoTarget.x + isoRadius * Math.sin(isoPhi) * Math.sin(isoTheta),
+                isoTarget.y + isoRadius * Math.cos(isoPhi),
+                isoTarget.z + isoRadius * Math.sin(isoPhi) * Math.cos(isoTheta));
+            isoCam.lookAt(isoTarget);
+        }
+        applyIsoFrustum(); updateIsoCam();
+        // The camera actually rendered/raycast: the perspective cam while Director
+        // runs (fisheye needs fov) or in Free mode; the ortho cam in Iso mode.
+        function curCam(){ return (viewMode === 'iso' && !directorMode) ? isoCam : camera; }
+        function setViewMode(m){
+            viewMode = m;
+            const b = document.getElementById('view-btn'); const lbl = b && b.querySelector('.pf-label');
+            if (lbl) lbl.textContent = 'View: ' + (m === 'iso' ? 'Iso' : 'Free');
+            if (m === 'iso') { if (pointerLocked) { try { document.exitPointerLock(); } catch (_) {} } applyIsoFrustum(); updateIsoCam(); }
+            applyFog();
+        }
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+        renderer.setSize(RENDER_H * aspect, RENDER_H);
+        renderer.setPixelRatio(1);
+        renderer.autoClear = false;          // manual clear → optional bg pre-pass
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFShadowMap;
+        container.appendChild(renderer.domElement);
+        const canvasEl = renderer.domElement;
+
+        // --- 2. Dynamic canvas for voxel splotch trails ---
+        // RGBA so each creature paints its OWN colour; overlaps blend like paint.
+        const arenaSize = 420;
+        const trailCanvas = document.createElement('canvas');
+        trailCanvas.width = 512; trailCanvas.height = 512;   // 512² → 4× cheaper texture upload
+        const trailCtx = trailCanvas.getContext('2d');
+        trailCtx.imageSmoothingEnabled = false;
+        trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height); // transparent
+
+        const trailTex = new THREE.CanvasTexture(trailCanvas);
+        trailTex.magFilter = THREE.NearestFilter;
+        trailTex.minFilter = THREE.NearestFilter;
+        trailTex.flipY = false;
+
+        let trailDirty = false;   // texture re-upload deferred to once per frame (perf)
+        const TRAIL_SCALE = trailCanvas.width / arenaSize;   // px per world unit
+        // Stamp the creature's contact CROSS-SECTION (its footprint) into the paint.
+        function stampFootprint(cx, cy, r, shape, angle) {
+            const ctx = trailCtx;
+            ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle || 0);
+            ctx.beginPath();
+            if (shape === 'square') {
+                const s = r * 0.92; ctx.rect(-s, -s, s * 2, s * 2);
+            } else if (shape === 'diamond') {
+                ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r); ctx.lineTo(-r, 0); ctx.closePath();
+            } else if (shape === 'triangle') {
+                ctx.moveTo(0, -r); ctx.lineTo(r * 0.92, r * 0.72); ctx.lineTo(-r * 0.92, r * 0.72); ctx.closePath();
+            } else if (shape === 'hex') {
+                for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832 + 0.52, px = Math.cos(a) * r, py = Math.sin(a) * r; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+                ctx.closePath();
+            } else if (shape === 'ring') {
+                ctx.arc(0, 0, r, 0, 6.2832); ctx.arc(0, 0, r * 0.42, 0, 6.2832, true);
+            } else {
+                ctx.arc(0, 0, r, 0, 6.2832);
+            }
+            ctx.fill('evenodd');
+            ctx.restore();
+        }
+        // `radius` is in WORLD units (≈ the creature's radius). The core is stamped
+        // in the creature's own footprint SHAPE (rotated by heading); the sides get
+        // Noita-style physics-voxel splatter (many tiny irregular pixels).
+        function paintTrail(worldX, worldZ, radius, colorCss, shape, angle) {
+            radius = radius || 2;
+            const cx = ((worldX + arenaSize / 2) / arenaSize) * trailCanvas.width;
+            const cy = ((worldZ + arenaSize / 2) / arenaSize) * trailCanvas.height;
+            const rpx = Math.max(1.0, radius * TRAIL_SCALE);
+            trailCtx.fillStyle = colorCss || '#ffffff';
+            // Core = footprint shape (slightly jittered so it's paint, not a stamp).
+            trailCtx.globalAlpha = 0.5 + Math.random() * 0.32;
+            stampFootprint(cx, cy, rpx * (0.82 + Math.random() * 0.3), shape || 'round', angle || 0);
+            // Noita splatter: a spray of tiny 1-2px voxels, denser near the impact.
+            const bits = 6 + (Math.random() * 12 | 0);
+            const dir = Math.random() * 6.2832;
+            for (let i = 0; i < bits; i++) {
+                const a = dir + (Math.random() - 0.5) * 2.0;
+                const dist = rpx * (0.7 + Math.pow(Math.random(), 1.7) * 3.8);   // physics-spray falloff
+                const px = Math.round(cx + Math.cos(a) * dist);
+                const py = Math.round(cy + Math.sin(a) * dist);
+                const s = 1 + (Math.random() * 2 | 0);                            // 1-2px voxel
+                trailCtx.globalAlpha = 0.30 + Math.random() * 0.45;
+                trailCtx.fillRect(px - (s >> 1), py - (s >> 1), s, s);
+            }
+            trailCtx.globalAlpha = 1.0;
+            trailDirty = true;
+        }
+
+        // --- 3. Bayer-dithered LIGHTING engine (real lights + real shadows) ---
+        // 8x8 Recursive Bayer Matrix: A 4x4 built inside another 2x2.
+        // It provides 64 smooth gradient steps for incredibly organized pixel gradients.
+        const BAYER_GLSL = `
+        float getDither(vec2 pos){
+            float mx=mod(pos.x,4.0), my=mod(pos.y,4.0), d1=0.0;
+            if(my==0.0){ if(mx==0.0)d1=0.0; else if(mx==1.0)d1=8.0; else if(mx==2.0)d1=2.0; else d1=10.0; }
+            else if(my==1.0){ if(mx==0.0)d1=12.0; else if(mx==1.0)d1=4.0; else if(mx==2.0)d1=14.0; else d1=6.0; }
+            else if(my==2.0){ if(mx==0.0)d1=3.0; else if(mx==1.0)d1=11.0; else if(mx==2.0)d1=1.0; else d1=9.0; }
+            else { if(mx==0.0)d1=15.0; else if(mx==1.0)d1=7.0; else if(mx==2.0)d1=13.0; else d1=5.0; }
+            
+            vec2 block = mod(floor(pos / 4.0), 2.0);
+            float d2 = 0.0;
+            if(block.y==0.0){ if(block.x==0.0)d2=0.0; else d2=2.0; }
+            else { if(block.x==0.0)d2=3.0; else d2=1.0; }
+            
+            return (d1 * 4.0 + d2) / 64.0;
+        }`;
+        
+        // Six dithered steps: a deep "pitch" and a hot highlight are derived so
+        // that even the shadows and highlights carry dithered gradient depth.
+        const CEL_GLSL = `
+        vec3 celBands(float li, float dither, vec3 L, vec3 M, vec3 D){
+            vec3 P = D * 0.28;                   // deeper deep-shadow → more range
+            vec3 H = mix(L, vec3(1.0), 0.35);    // hot highlight
+            if(li<0.17) return P;
+            else if(li<0.35) return mix(P,D,step(dither,(li-0.17)/0.18));
+            else if(li<0.51) return mix(D,M,step(dither,(li-0.35)/0.16));
+            else if(li<0.65) return M;
+            else if(li<0.83) return mix(M,L,step(dither,(li-0.65)/0.18));
+            return mix(L,H,step(dither,(li-0.83)/0.17));
+        }`;
+
+        let _matId = 0;
+        // Build a lit, shadow-receiving, dither-cel material. `light/mid/dark`
+        // are the object's own 3-tone palette; the real lighting picks the band
+        // (with shadows), and the light's colour tints it. `rim` adds a toon
+        // silhouette outline (creatures/props on, ground off).
+        function makeDitherMaterial(opts) {
+            opts = opts || {};
+            const L = new THREE.Color(opts.light || '#e8e8e8');
+            const M = new THREE.Color(opts.mid || '#8f8f8f');
+            const D = new THREE.Color(opts.dark || '#333333');
+            const P = D.clone().multiplyScalar(0.5);
+            return new THREE.ShaderMaterial({
+                uniforms: {
+                    ...creatureUniforms,
+                    u_colorLight:  { value: L },
+                    u_colorMid:    { value: M },
+                    u_colorDark:   { value: D },
+                    u_colorPitch:  { value: P },
+                    u_colorOutline:{ value: opts.outline ? new THREE.Color(opts.outline) : P.clone().multiplyScalar(0.6) },
+                    u_rim:         { value: opts.rim ? 1.0 : 0.0 },
+                    u_squashN:     { value: new THREE.Vector3(0, 1, 0) },
+                    u_squash:      { value: 1.0 }
+                },
+                vertexShader: blobVert, fragmentShader: worldFrag
+            });
+        }
+
+        // --- Flat inked creature shading (imported from AudioBiome0.6) ---------
+        const HSV_GLSL = `
+        vec3 rgb2hsv(vec3 c){
+            vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+            vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+            vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+            float d = q.x - min(q.w, q.y); float e = 1.0e-10;
+            return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+        }
+        vec3 hsv2rgb(vec3 c){
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }`;
+
+        // Shared, updated once per frame in animate() → every creature follows
+        // the world sun direction + colour.
+        const creatureUniforms = {
+            u_lightDir:   { value: new THREE.Vector3(0.55, 1.0, 0.35).normalize() },
+            u_lightColor: { value: new THREE.Color('#fff4d6') },
+            u_pixelSize:  { value: 1.0 }
+        };
+        // Shared vertex shader. `u_squashN` (local axis) + `u_squash` do a
+        // volume-preserving JELLO squash along an arbitrary axis (the contact
+        // side), so whatever face is touching the floor / another creature
+        // flattens then rebounds instead of clipping through. `vDepth` (view-
+        // space distance) lets the fragment shaders dither FINER far away so
+        // distant creatures keep tonal detail.
+        const blobVert = `
+            uniform vec3 u_squashN; uniform float u_squash;
+            varying vec3 vNormal; varying vec3 vWNormal; varying float vDepth;
+            void main(){
+                vec3 axis = normalize(u_squashN);
+                float a = dot(position, axis);
+                vec3 along = axis * a;
+                vec3 perp = position - along;
+                float k = clamp(u_squash, 0.4, 1.6);
+                vec3 pos = perp * (1.0 / sqrt(k)) + along * k;   // squash along axis, bulge perp
+                // Deform the normal the same way (inverse-scale) so shading tracks.
+                vec3 nrm = normal;
+                float na = dot(nrm, axis);
+                nrm = (nrm - axis * na) * sqrt(k) + axis * (na / k);
+                vNormal  = normalize(normalMatrix * nrm);
+                vWNormal = normalize(mat3(modelMatrix) * nrm);
+                vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+                vDepth = -mv.z;
+                gl_Position = projectionMatrix * mv;
+            }`;
+        const DITHER_PX_GLSL = `
+            // Coarse (chunky) up close, fine far away — preserves distant detail.
+            float ditherPx(float base, float depth){ return base * mix(2.0, 1.0, clamp((depth - 30.0) / 150.0, 0.0, 1.0)); }`;
+            
+        // Thicker cel-shaded outline version
+        // Continuous Bayer-dithered ramp across 5 stops (Pitch→Dark→Mid→Light→Hi).
+        // EVERY fragment is a dithered mix of two ADJACENT stops, so shades face
+        // into each other smoothly — no flat/abrupt bands, full dynamic range,
+        // and the darkest tone is Pitch (a very dark tint of the colour, not black).
+        const RAMP_GLSL = `
+        // Continuous 5-stop gradient (Pitch→Dark→Mid→Light→Hi) sampled anywhere.
+        vec3 gradTone(float t, vec3 P, vec3 D, vec3 M, vec3 L, vec3 H){
+            t = clamp(t, 0.0, 1.0) * 4.0;
+            float seg = floor(t), f = fract(t);
+            vec3 a, b;
+            if (seg < 1.0)      { a = P; b = D; }
+            else if (seg < 2.0) { a = D; b = M; }
+            else if (seg < 3.0) { a = M; b = L; }
+            else                { a = L; b = H; }
+            return mix(a, b, f);
+        }
+        // Ordered-dither the lighting across MANY fine levels so neighbouring
+        // shades melt into each other as smooth shading (not sparse standalone
+        // dots), spanning the full Pitch→Hi dynamic range.
+        vec3 ramp5(float li, float d, vec3 P, vec3 D, vec3 M, vec3 L, vec3 H){
+            const float LEVELS = 18.0;             // dense tonal resolution
+            float q = floor(clamp(li, 0.0, 1.0) * LEVELS + d) / LEVELS;
+            return gradTone(q, P, D, M, L, H);
+        }`;
+        const blobFrag = `
+            uniform vec3 u_lightDir, u_lightColor, u_colorLight, u_colorMid, u_colorDark, u_colorPitch, u_colorOutline;
+            uniform float u_pixelSize, u_hover;
+            varying vec3 vNormal; varying vec3 vWNormal; varying float vDepth;
+            ${BAYER_GLSL} ${RAMP_GLSL} ${DITHER_PX_GLSL}
+            void main(){
+                float li = dot(vWNormal, normalize(u_lightDir)) * 0.5 + 0.5;
+                float thick = 0.40 + (1.0 - li) * 0.16;
+                float d = getDither(floor(gl_FragCoord.xy / ditherPx(u_pixelSize, vDepth)));
+                float jitter = (d - 0.5) * 0.05;
+                if (dot(vNormal, vec3(0.0, 0.0, 1.0)) < thick + jitter) {
+                    gl_FragColor = vec4(u_colorOutline, 1.0); return;   // crisp black ink outline
+                }
+                vec3 H = mix(u_colorLight, vec3(1.0), 0.62);                    // hotter highlight → wider range
+                vec3 c = ramp5(li, d, u_colorPitch, u_colorDark, u_colorMid, u_colorLight, H);
+                c *= mix(vec3(1.0), u_lightColor, 0.30);                        // day/night tint
+                gl_FragColor = vec4(c, 1.0);
+            }`;
+
+        // --- Inverted-hull HOVER OUTLINE (true silhouette halo, any angle) -----
+        // Expands the creature's own geometry along its normals in VIEW space and
+        // draws only the back faces — producing a clean pastel-yellow rim that
+        // wraps the ENTIRE creature from whatever direction the camera looks.
+        const outlineVert = `
+            uniform float u_ow; uniform vec3 u_squashN; uniform float u_squash;
+            void main(){
+                vec3 axis = normalize(u_squashN);
+                float a = dot(position, axis);
+                vec3 along = axis * a;
+                vec3 perp = position - along;
+                float k = clamp(u_squash, 0.4, 1.6);
+                vec3 pos = perp * (1.0 / sqrt(k)) + along * k;
+                vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+                vec3 n = normalize(normalMatrix * normal);
+                mv.xyz += n * u_ow;
+                gl_Position = projectionMatrix * mv;
+            }`;
+        const outlineFrag = `
+            uniform float u_pulse;
+            void main(){ gl_FragColor = vec4(1.0, 0.95, 0.55, u_pulse); }`;   // pastel yellow
+        function makeHoverOutline(geo){
+            const mat = new THREE.ShaderMaterial({
+                uniforms: { u_ow: { value: 0.55 }, u_pulse: { value: 1.0 },
+                            u_squashN: { value: new THREE.Vector3(0, 1, 0) }, u_squash: { value: 1.0 } },
+                vertexShader: outlineVert, fragmentShader: outlineFrag,
+                side: THREE.BackSide, transparent: true
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.visible = false; mesh.renderOrder = -1;   // sits behind the body fill
+            return mesh;
+        }
+        function makeCreatureMat(colLight, colMid, colDark, colPitch, colOutline){
+            return new THREE.ShaderMaterial({
+                uniforms: {
+                    ...creatureUniforms,
+                    u_colorLight:   { value: colLight },
+                    u_colorMid:     { value: colMid },
+                    u_colorDark:    { value: colDark },
+                    u_colorPitch:   { value: colPitch },
+                    u_colorOutline: { value: colOutline },
+                    u_hover:        { value: 0 },
+                    u_squashN:      { value: new THREE.Vector3(0, 1, 0) },
+                    u_squash:       { value: 1.0 }
+                },
+                vertexShader: blobVert, fragmentShader: blobFrag
+            });
+        }
+
+        // --- Palette system: saturated, THEMED schemes ---------------------------
+        // Each palette = a hue set (null = whole wheel) + saturation/lightness
+        // ranges. Clicking one instantly recolours every creature (see applyPaletteToAll).
+        const PALETTES = {
+            'Full Spectrum': { hues: null,                          sat: [0.65, 0.95], lig: [0.50, 0.62] },
+            'Sunset':        { hues: [0.02, 0.06, 0.10, 0.95, 0.90], sat: [0.85, 1.00], lig: [0.50, 0.62] },
+            'Ocean':         { hues: [0.50, 0.55, 0.60, 0.47, 0.66], sat: [0.70, 0.98], lig: [0.45, 0.60] },
+            'Candy':         { hues: [0.90, 0.95, 0.83, 0.55, 0.13], sat: [0.80, 1.00], lig: [0.58, 0.72] },
+            'Forest':        { hues: [0.28, 0.33, 0.38, 0.16, 0.44], sat: [0.62, 0.92], lig: [0.40, 0.55] },
+            'Vaporwave':     { hues: [0.83, 0.75, 0.50, 0.92, 0.58], sat: [0.75, 1.00], lig: [0.55, 0.70] },
+            'Fire':          { hues: [0.00, 0.03, 0.06, 0.09, 0.13], sat: [0.90, 1.00], lig: [0.48, 0.60] },
+            'Mint':          { hues: [0.42, 0.45, 0.48, 0.38, 0.52], sat: [0.55, 0.85], lig: [0.52, 0.66] }
+        };
+        let activePaletteName = 'Full Spectrum';
+        let customHues = [0.60, 0.90, 0.15];
+        function activePalette(){
+            return (activePaletteName === 'Custom')
+                ? { hues: customHues, sat: [0.72, 0.96], lig: [0.50, 0.62] }
+                : (PALETTES[activePaletteName] || PALETTES['Full Spectrum']);
+        }
+        function paletteBaseHue(){
+            const p = activePalette();
+            return (p.hues && p.hues.length) ? p.hues[0] : 0.0;
+        }
+        function sampleColor(){
+            const p = activePalette();
+            let hue = p.hues ? (p.hues[Math.floor(Math.random() * p.hues.length)] + (Math.random() - 0.5) * 0.04) : Math.random();
+            hue = (hue % 1 + 1) % 1;
+            const sat = p.sat[0] + Math.random() * (p.sat[1] - p.sat[0]);
+            const lig = p.lig[0] + Math.random() * (p.lig[1] - p.lig[0]);
+            return new THREE.Color().setHSL(hue, sat, lig);
+        }
+        // Recolour one creature in place (updates its shader-uniform ramp).
+        function recolorCreature(c, color){
+            color = color || sampleColor();
+            c.color = color; c.colorCss = '#' + color.getHexString();
+            const hsl = { h: 0, s: 0, l: 0 }; color.getHSL(hsl);
+            const u = c.body.material.uniforms;
+            u.u_colorLight.value.setHSL(hsl.h, Math.max(0.30, hsl.s * 0.75), Math.min(0.92, hsl.l + 0.36));
+            u.u_colorMid.value.copy(color);
+            u.u_colorDark.value.setHSL(hsl.h, Math.min(1.0, hsl.s * 1.1),  Math.max(0.16, hsl.l * 0.40));
+            u.u_colorPitch.value.setHSL(hsl.h, Math.min(1.0, hsl.s * 1.15), Math.max(0.13, hsl.l * 0.22));
+            u.u_colorOutline.value.setHSL(hsl.h, Math.min(1.0, hsl.s * 1.2), Math.max(0.07, hsl.l * 0.12));
+        }
+        // Clicking a palette snaps EVERY existing creature into the new scheme.
+        function applyPaletteToAll(){ creatures.forEach(c => recolorCreature(c)); }
+        function makeCreatureFromColor(color){
+            const hsl = { h: 0, s: 0, l: 0 }; color.getHSL(hsl);
+            const colLight = new THREE.Color().setHSL(hsl.h, Math.max(0.30, hsl.s * 0.75), Math.min(0.92, hsl.l + 0.36));
+            const colDark  = new THREE.Color().setHSL(hsl.h, Math.min(1.0, hsl.s * 1.1),  Math.max(0.16, hsl.l * 0.40));
+            // Pitch + outline are very dark TINTS of the hue — never pure black.
+            const colPitch = new THREE.Color().setHSL(hsl.h, Math.min(1.0, hsl.s * 1.15), Math.max(0.13, hsl.l * 0.22));
+            const colOut   = new THREE.Color().setHSL(hsl.h, Math.min(1.0, hsl.s * 1.2),  Math.max(0.07, hsl.l * 0.12));
+            return makeCreatureMat(colLight, color, colDark, colPitch, colOut);
+        }
+
+        // Title-demo dither shading for WORLD surfaces (ground / props / lamp):
+        const worldFrag = `
+            uniform vec3 u_lightDir, u_lightColor, u_colorLight, u_colorMid, u_colorDark, u_colorPitch, u_colorOutline;
+            uniform float u_pixelSize, u_rim;
+            varying vec3 vNormal; varying vec3 vWNormal; varying float vDepth;
+            ${BAYER_GLSL} ${RAMP_GLSL} ${DITHER_PX_GLSL}
+            void main(){
+                float li = dot(vWNormal, normalize(u_lightDir)) * 0.5 + 0.5;
+                float d = getDither(floor(gl_FragCoord.xy / ditherPx(u_pixelSize, vDepth)));
+                if (u_rim > 0.5 && dot(vNormal, vec3(0.0, 0.0, 1.0)) < 0.30) { gl_FragColor = vec4(u_colorOutline, 1.0); return; }
+                vec3 H = mix(u_colorLight, vec3(1.0), 0.45);
+                vec3 c = ramp5(li, d, u_colorPitch, u_colorDark, u_colorMid, u_colorLight, H);
+                c *= mix(vec3(1.0), u_lightColor, 0.22);
+                gl_FragColor = vec4(c, 1.0);
+            }`;
+        function worldMat(l, m, d, p, rim){
+            const pc = new THREE.Color(p);
+            return new THREE.ShaderMaterial({
+                uniforms: {
+                    ...creatureUniforms,
+                    u_colorLight:  { value: new THREE.Color(l) },
+                    u_colorMid:    { value: new THREE.Color(m) },
+                    u_colorDark:   { value: new THREE.Color(d) },
+                    u_colorPitch:  { value: pc },
+                    u_colorOutline:{ value: pc.clone().multiplyScalar(0.6) },   // dark tint, not black
+                    u_rim:         { value: rim ? 1.0 : 0.0 },
+                    u_squashN:     { value: new THREE.Vector3(0, 1, 0) },
+                    u_squash:      { value: 1.0 }
+                },
+                vertexShader: blobVert, fragmentShader: worldFrag
+            });
+        }
+
+        // --- Fake global light (title-demo style) + day/night tint state -------
+        const _lightDir = new THREE.Vector3(0.55, 1.0, 0.35).normalize();
+        let nightMode = false;   // driven by the sky background's night variant
+
+        // --- Environment geometry (dither gradients carry the 3D depth) ---
+        const groundMat = makeDitherMaterial({ light: '#ffffff', mid: '#b9a6a0', dark: '#5a4c4c', rim: false });
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Colour-splotch trails ride on a thin decal plane above the ground.
+        const splotchMat = new THREE.ShaderMaterial({
+            transparent: true, depthWrite: false,
+            uniforms: { u_trailMap: { value: trailTex }, u_time: { value: 0 }, u_pixelSize: { value: 1.0 } },
+            vertexShader: `varying vec2 vUv; varying vec3 vWorldPosition;
+                void main(){ vUv = uv; vec4 wp = modelMatrix * vec4(position,1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+            fragmentShader: `
+                uniform sampler2D u_trailMap; uniform float u_time; uniform float u_pixelSize;
+                varying vec2 vUv; varying vec3 vWorldPosition;
+                ${BAYER_GLSL} ${HSV_GLSL}
+                void main(){
+                    // Sample the trail by WORLD position (matches paintTrail's
+                    // mapping exactly) so splotches land where creatures actually
+                    // are — not mirrored by the plane's UV/rotation.
+                    vec2 tUV = vec2((vWorldPosition.x + 210.0) / 420.0, (vWorldPosition.z + 210.0) / 420.0);
+                    if (tUV.x < 0.0 || tUV.x > 1.0 || tUV.y < 0.0 || tUV.y > 1.0) discard;
+                    vec4 tr = texture2D(u_trailMap, tUV);
+                    if (tr.a < 0.02) discard;                       // bare ground shows through
+                    float d = getDither(floor(gl_FragCoord.xy / u_pixelSize));
+                    float baseHue = rgb2hsv(tr.rgb).x;
+                    // DRAMATIC hue shifting: wide animated hue sweep + saturation
+                    // drift at constant brightness (no light/dark flicker).
+                    float sweepA = sin(u_time * 0.9 + vWorldPosition.x * 0.05 + vWorldPosition.z * 0.04);
+                    float sweepB = cos(u_time * 0.6 - vWorldPosition.z * 0.05 + vWorldPosition.x * 0.03);
+                    float hueA = baseHue + sweepA * 0.17;
+                    float hueB = baseHue + sweepB * 0.17 + 0.09;
+                    float satA = clamp(0.72 + 0.28 * sin(u_time * 1.1 + vWorldPosition.x * 0.06), 0.3, 1.0);
+                    float satB = clamp(0.72 + 0.28 * cos(u_time * 0.8 + vWorldPosition.z * 0.06), 0.3, 1.0);
+                    vec3 shadeA = hsv2rgb(vec3(fract(hueA), satA, 0.86));
+                    vec3 shadeB = hsv2rgb(vec3(fract(hueB), satB, 0.86));
+                    float flow = 0.5 + 0.5 * sin(vWorldPosition.x * 0.10 + u_time * 1.4) * cos(vWorldPosition.z * 0.10 - u_time * 1.1);
+                    vec3 col = mix(shadeA, shadeB, step(d, flow));
+                    float cov = clamp(tr.a * (0.6 + 0.8 * flow), 0.0, 1.0);
+                    if (step(d, cov) < 0.5) discard;
+                    gl_FragColor = vec4(col, 0.92);
+                }`
+        });
+        const trailDecal = new THREE.Mesh(
+            new THREE.PlaneGeometry(arenaSize, arenaSize),
+            splotchMat
+        );
+        trailDecal.rotation.x = -Math.PI / 2;
+        trailDecal.position.y = 0.06;
+        trailDecal.renderOrder = 1;
+        scene.add(trailDecal);
+
+        // A lamp post to hang the streetlight on.
+        const postMat = makeDitherMaterial({ light: '#5a5a64', mid: '#33333b', dark: '#141418', rim: true });
+        const lampHeadMat = makeDitherMaterial({ light: '#fff0c0', mid: '#c99a4a', dark: '#5c4420', rim: true });
+        const lampPost = new THREE.Group();
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 17, 8), postMat);
+        pole.position.y = 8.5; pole.castShadow = true; lampPost.add(pole);
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(4, 0.6, 0.6), postMat);
+        arm.position.set(1.6, 16.6, 0); arm.castShadow = true; lampPost.add(arm);
+        const lampHead = new THREE.Mesh(new THREE.ConeGeometry(1.8, 2.2, 8), lampHeadMat);
+        lampHead.position.set(3.2, 15.6, 0); lampHead.rotation.x = Math.PI; lampHead.castShadow = true; lampPost.add(lampHead);
+        const lampGlow = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 8), new THREE.MeshBasicMaterial({ color: '#fff0b0' }));
+        lampGlow.position.set(3.2, 15.0, 0); lampPost.add(lampGlow);
+        lampPost.position.set(-26, 0, -12);
+        scene.add(lampPost);
+
+        // Scatter simple 3D props for depth + interesting cast shadows.
+        const stoneMat = makeDitherMaterial({ light: '#b6b2a4', mid: '#726e60', dark: '#2b2a24', rim: true });
+        const woodMat  = makeDitherMaterial({ light: '#a9784a', mid: '#6e4a28', dark: '#2c1c10', rim: true });
+        const leafMat  = makeDitherMaterial({ light: '#7ea653', mid: '#4c6f30', dark: '#1e2e14', rim: true });
+        const propMats = [stoneMat, woodMat, stoneMat, leafMat];
+        function addProp(x, z, kind, s) {
+            let mesh;
+            if (kind === 'rock') mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(s), stoneMat);
+            else if (kind === 'crate') mesh = new THREE.Mesh(new THREE.BoxGeometry(s * 1.6, s * 1.6, s * 1.6), woodMat);
+            else if (kind === 'pillar') mesh = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.7, s * 0.8, s * 4, 8), stoneMat);
+            else { // tree = trunk + foliage
+                mesh = new THREE.Group();
+                const tr = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.4, s * 0.5, s * 4, 6), woodMat);
+                tr.position.y = s * 2; tr.castShadow = true; tr.receiveShadow = true;
+                const fol = new THREE.Mesh(new THREE.IcosahedronGeometry(s * 2.2, 0), leafMat);
+                fol.position.y = s * 5; fol.castShadow = true; fol.receiveShadow = true;
+                mesh.add(tr); mesh.add(fol);
+            }
+            if (mesh.isMesh) { mesh.castShadow = true; mesh.receiveShadow = true; if (kind !== 'crate') mesh.position.y = (kind === 'pillar' ? s * 2 : s); }
+            mesh.position.x = x; mesh.position.z = z;
+            if (kind === 'crate') mesh.position.y = s * 0.8;
+            scene.add(mesh);
+        }
+        (function scatterProps() {
+            const kinds = ['rock', 'crate', 'pillar', 'tree', 'rock', 'tree'];
+            for (let i = 0; i < (IS_MOBILE ? 9 : 16); i++) {
+                const a = Math.random() * Math.PI * 2;
+                const r = 40 + Math.random() * 160;   // spread across the larger arena
+                const x = Math.cos(a) * r, z = Math.sin(a) * r;
+                if (Math.hypot(x + 26, z + 12) < 8) continue; // keep clear of the lamp
+                addProp(x, z, kinds[Math.floor(Math.random() * kinds.length)], 1.6 + Math.random() * 2.4);
+            }
+        })();
+
+        // Sky dome (follows the camera) — a dithered vertical gradient.
+        const skyMat = new THREE.ShaderMaterial({
+            side: THREE.BackSide, depthWrite: false, fog: false,
+            uniforms: {
+                uLo: { value: new THREE.Color('#cfe3f2') }, uHi: { value: new THREE.Color('#6f9fd8') },
+                u_time: { value: 0 }, u_night: { value: 0 }
+            },
+            vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+            fragmentShader: `
+                uniform vec3 uLo, uHi; uniform float u_time, u_night; varying vec3 vDir;
+                ${BAYER_GLSL} ${HSV_GLSL}
+                float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+                void main(){
+                    vec3 dir = normalize(vDir);
+                    float h = clamp(dir.y * 0.6 + 0.35, 0.0, 1.0);
+                    vec2 fc = gl_FragCoord.xy;
+                    float ripple = sin(fc.x * 0.030 + u_time * 1.1) * 3.0
+                                 + sin(fc.y * 0.025 - u_time * 0.8) * 3.0
+                                 + sin((fc.x + fc.y) * 0.018 + u_time * 1.6) * 2.0;
+                    float d = getDither(floor(fc + vec2(ripple, ripple * 0.7)));
+                    vec3 loH = rgb2hsv(uLo), hiH = rgb2hsv(uHi);
+                    float hueShift = 0.05 * sin(u_time * 0.35) + 0.03 * sin(u_time * 0.13 + dir.x * 2.0) + 0.06 * sin(u_time * 0.06);
+                    float spatial = 0.07 * dir.x + 0.05 * sin(dir.y * 3.0 + u_time * 0.2);
+                    vec3 lo = hsv2rgb(vec3(fract(loH.x + hueShift + spatial), loH.y, loH.z));
+                    vec3 hi = hsv2rgb(vec3(fract(hiH.x + hueShift + spatial * 0.5), hiH.y, hiH.z));
+                    vec3 col = mix(lo, hi, step(d, h));
+                    if (u_night > 0.5) {
+                        vec2 sc = floor(dir.xy * 260.0 + dir.zz * 80.0);
+                        float star = hash21(sc);
+                        if (star > 0.984 && dir.y > 0.0) {
+                            float tw = 0.55 + 0.45 * sin(u_time * 3.0 + star * 120.0);
+                            col = mix(col, vec3(1.0), step(d, tw) * clamp((star - 0.984) / 0.016, 0.0, 1.0));
+                        }
+                    }
+                    gl_FragColor = vec4(col, 1.0);
+                }`
+        });
+        const skyDome = new THREE.Mesh(new THREE.SphereGeometry(600, 24, 16), skyMat);
+        skyDome.renderOrder = -1;
+        scene.add(skyDome);
+
+        // --- EarthBound BATTLE BACKGROUND (optional) --------------------------
+        const bgScene = new THREE.Scene();
+        const bgCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const battleMat = new THREE.ShaderMaterial({
+            depthTest: false, depthWrite: false,
+            uniforms: { u_time: { value: 0 }, u_hue: { value: 0.0 }, u_spectrum: { value: 1.0 } },
+            vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position, 1.0); }`,
+            fragmentShader: `
+                uniform float u_time, u_hue, u_spectrum; varying vec2 vUv;
+                ${BAYER_GLSL} ${HSV_GLSL}
+                void main(){
+                    float t = u_time; vec2 uv = vUv;
+                    vec2 w1 = uv + 0.06 * vec2(sin(uv.y * 9.0 + t * 1.3), cos(uv.x * 8.0 - t * 1.1));
+                    vec2 w2 = uv * 1.7 + 0.09 * vec2(sin(uv.x * 6.0 - t * 0.9), sin(uv.y * 7.0 + t * 1.5));
+                    float p1 = sin(w1.x * 20.0 + t * 2.0) * cos(w1.y * 18.0 - t * 1.6);
+                    float p2 = sin((w2.x - w2.y) * 16.0 + t * 2.4);
+                    float f = clamp((p1 * 0.5 + 0.5) * 0.6 + (p2 * 0.5 + 0.5) * 0.4, 0.0, 1.0);
+                    float baseHue = u_hue + u_spectrum * t * 0.03;
+                    vec3 cA = hsv2rgb(vec3(fract(baseHue + 0.05 * sin(t * 0.5)), 0.85, 0.55));
+                    vec3 cB = hsv2rgb(vec3(fract(baseHue + 0.33), 0.85, 0.78));
+                    vec3 cC = hsv2rgb(vec3(fract(baseHue + 0.66), 0.90, 0.40));
+                    float dth = getDither(floor(gl_FragCoord.xy / 3.0));
+                    vec3 col = mix(cA, cB, step(dth, f));
+                    col = mix(col, cC, step(dth, f * f * (0.6 + 0.4 * sin(t * 0.8))));
+                    vec2 cell = fract(gl_FragCoord.xy / 4.0) - 0.5;
+                    float dotm = smoothstep(0.45, 0.15, length(cell)) * (0.4 + 0.6 * f);
+                    col = mix(col * 0.55, col * 1.15, dotm);
+                    gl_FragColor = vec4(col, 1.0);
+                }`
+        });
+        bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), battleMat));
+        let battleBG = false;
+        const BG_MODES = ['sky', 'night', 'battle'];
+        let bgModeIdx = 0;
+        function setBgMode(mode) {
+            battleBG = (mode === 'battle');
+            nightMode = (mode === 'night');
+            skyDome.visible = (mode !== 'battle');
+            skyMat.uniforms.u_night.value = nightMode ? 1.0 : 0.0;
+            if (mode === 'night')      setAtmosphere('#0d1226', 90, 640, '#080b18', '#141d3a', '#04060f');
+            else if (mode === 'sky')   applyWeather();   // day sky = the active weather preset
+            else { applyFog(); applyBg(); }        // battle: fog/bg off
+            const b = document.getElementById('bg-btn'); const lbl = b && b.querySelector('.pf-label');
+            if (lbl) lbl.textContent = 'BG: ' + (mode === 'sky' ? 'Sky' : mode === 'night' ? 'Night' : 'Battle');
+        }
+        function cycleBgMode() { bgModeIdx = (bgModeIdx + 1) % BG_MODES.length; setBgMode(BG_MODES[bgModeIdx]); }
+
+        // Sun / moon disc that hangs in the sky.
+        const celestial = new THREE.Mesh(new THREE.CircleGeometry(26, 24), new THREE.MeshBasicMaterial({ color: '#fff3c0' }));
+        celestial.material.fog = false;
+        scene.add(celestial);
+
+        // --- 3D DITHERED van-Gogh CLOUDS -------------------------------------
+        // Clusters of low-poly blobs shaded with a swirling, dithered cel ramp so
+        // they read as thick impasto brushstrokes catching the light.
+        const cloudMat = new THREE.ShaderMaterial({
+            uniforms: {
+                u_lightDir: { value: _lightDir }, u_time: { value: 0 },
+                u_cloudLo: { value: new THREE.Color('#c4d2e2') }, u_cloudHi: { value: new THREE.Color('#ffffff') }
+            },
+            vertexShader: `
+                varying vec3 vWNormal; varying vec3 vWPos; varying float vDepth;
+                void main(){
+                    vWNormal = normalize(mat3(modelMatrix) * normal);
+                    vec4 wp = modelMatrix * vec4(position, 1.0); vWPos = wp.xyz;
+                    vec4 mv = modelViewMatrix * vec4(position, 1.0); vDepth = -mv.z;
+                    gl_Position = projectionMatrix * mv;
+                }`,
+            fragmentShader: `
+                uniform vec3 u_lightDir, u_cloudLo, u_cloudHi; uniform float u_time;
+                varying vec3 vWNormal; varying vec3 vWPos; varying float vDepth;
+                ${BAYER_GLSL} ${DITHER_PX_GLSL}
+                void main(){
+                    float li = dot(normalize(vWNormal), normalize(u_lightDir)) * 0.5 + 0.5;
+                    // van-Gogh swirl: a curl-ish flow field warps the tone into strokes.
+                    float ang = sin(vWPos.x * 0.05 + u_time * 0.3)
+                              + cos(vWPos.y * 0.06 - u_time * 0.22)
+                              + sin(vWPos.z * 0.05 + u_time * 0.26);
+                    float swirl = 0.5 + 0.5 * sin(ang * 2.6 + vWPos.y * 0.10 + u_time * 0.5);
+                    li = clamp(li * 0.65 + swirl * 0.55, 0.0, 1.0);
+                    float d = getDither(floor(gl_FragCoord.xy / ditherPx(1.0, vDepth)));
+                    float levels = 9.0;
+                    float q = floor(li * levels + d) / levels;
+                    gl_FragColor = vec4(mix(u_cloudLo, u_cloudHi, q), 1.0);
+                }`
+        });
+        const cloudGroup = new THREE.Group();
+        scene.add(cloudGroup);
+        (function buildClouds() {
+            const cg = new THREE.IcosahedronGeometry(1, 1);
+            const count = IS_MOBILE ? 5 : 7;
+            for (let i = 0; i < count; i++) {
+                const cl = new THREE.Group();
+                const blobs = 4 + (Math.random() * 4 | 0);
+                for (let b = 0; b < blobs; b++) {
+                    const m = new THREE.Mesh(cg, cloudMat);
+                    const s = 7 + Math.random() * 9;
+                    m.scale.set(s * (0.8 + Math.random() * 0.7), s * (0.55 + Math.random() * 0.4), s * (0.8 + Math.random() * 0.7));
+                    m.position.set((Math.random() - 0.5) * 24, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 24);
+                    cl.add(m);
+                }
+                cl.position.set((Math.random() - 0.5) * 320, 56 + Math.random() * 44, (Math.random() - 0.5) * 320);
+                cl.userData.drift = 1.4 + Math.random() * 2.6;
+                cloudGroup.add(cl);
+            }
+        })();
+        let weatherCloudsOn = true;
+
+        // --- WEATHER / ENVIRONMENT + precipitation ---------------------------
+        const PRECIP_N = IS_MOBILE ? 420 : 900;
+        const precipGeo = new THREE.BufferGeometry();
+        const precipPos = new Float32Array(PRECIP_N * 3);
+        for (let i = 0; i < PRECIP_N; i++) {
+            precipPos[i * 3] = (Math.random() - 0.5) * 140;
+            precipPos[i * 3 + 1] = Math.random() * 120;
+            precipPos[i * 3 + 2] = (Math.random() - 0.5) * 140;
+        }
+        precipGeo.setAttribute('position', new THREE.BufferAttribute(precipPos, 3));
+        const precipMat = new THREE.PointsMaterial({ size: 1.6, color: '#ffffff', transparent: true, opacity: 0.9, depthWrite: false, fog: false });
+        const precip = new THREE.Points(precipGeo, precipMat);
+        precip.frustumCulled = false; precip.visible = false;
+        scene.add(precip);
+        let precipMode = 'none';
+        function updatePrecip(dt, cp) {
+            if (precipMode === 'none' || battleBG) { precip.visible = false; return; }
+            precip.visible = true;
+            const a = precipPos, fast = (precipMode === 'rain');
+            const fall = fast ? 150 : 24;
+            for (let i = 0; i < PRECIP_N; i++) {
+                let x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2];
+                y -= fall * dt;
+                if (fast) x -= 26 * dt; else x += Math.sin((y + i) * 0.12) * 7 * dt;
+                if (y < cp.y - 46) { y = cp.y + 60; x = cp.x + (Math.random() - 0.5) * 150; z = cp.z + (Math.random() - 0.5) * 150; }
+                else if (Math.abs(x - cp.x) > 90) { x = cp.x + (Math.random() - 0.5) * 150; }
+                a[i * 3] = x; a[i * 3 + 1] = y; a[i * 3 + 2] = z;
+            }
+            precipGeo.attributes.position.needsUpdate = true;
+        }
+
+        const WEATHERS = ['Clear', 'Sunset', 'Ocean', 'Snow', 'Rain', 'Fog'];
+        const WEATHER_DEFS = {
+            Clear:  { fog: '#bcd4e6', near: 80, far: 520, bg: '#9fc0dd', lo: '#d7e8f4', hi: '#5f93cf', light: [1.00, 1.00, 1.00], precip: 'none', clouds: true,  cLo: '#c4d2e2', cHi: '#ffffff' },
+            Sunset: { fog: '#e7a066', near: 62, far: 470, bg: '#c9744c', lo: '#ffcf9a', hi: '#d84e3a', light: [1.00, 0.80, 0.58], precip: 'none', clouds: true,  cLo: '#e79a72', cHi: '#ffe6c6' },
+            Ocean:  { fog: '#8fc7cf', near: 70, far: 500, bg: '#57a3b2', lo: '#cdeff0', hi: '#3a92ad', light: [0.80, 0.95, 1.00], precip: 'none', clouds: true,  cLo: '#a9d8dc', cHi: '#f0ffff' },
+            Snow:   { fog: '#dfe8f2', near: 48, far: 340, bg: '#cdd9e6', lo: '#eef4fb', hi: '#a9c2de', light: [0.90, 0.94, 1.00], precip: 'snow', clouds: true,  cLo: '#c8d4e2', cHi: '#ffffff', pC: '#ffffff', pS: 1.7, pO: 0.92 },
+            Rain:   { fog: '#98a2ac', near: 44, far: 300, bg: '#79838e', lo: '#c2c9d1', hi: '#6b7784', light: [0.70, 0.75, 0.82], precip: 'rain', clouds: true,  cLo: '#8b96a4', cHi: '#c0c8d2', pC: '#a9c0d4', pS: 0.7, pO: 0.5 },
+            Fog:    { fog: '#cfd6dc', near: 18, far: 150, bg: '#c2c9cf', lo: '#dfe4e8', hi: '#aeb6be', light: [0.84, 0.86, 0.90], precip: 'none', clouds: false, cLo: '#c0c6cc', cHi: '#eef1f4' }
+        };
+        let currentWeather = 'Clear';
+        const weatherLight = new THREE.Color(1, 1, 1);
+        function applyWeather() {
+            const w = WEATHER_DEFS[currentWeather];
+            precipMode = w.precip;
+            precipMat.color.set(w.pC || '#ffffff'); precipMat.size = w.pS || 1.6; precipMat.opacity = w.pO || 0.9;
+            cloudMat.uniforms.u_cloudLo.value.set(w.cLo); cloudMat.uniforms.u_cloudHi.value.set(w.cHi);
+            weatherCloudsOn = w.clouds;
+            weatherLight.setRGB(w.light[0], w.light[1], w.light[2]);
+            if (BG_MODES[bgModeIdx] === 'sky') setAtmosphere(w.fog, w.near, w.far, w.bg, w.lo, w.hi);
+            const b = document.getElementById('weather-btn'); const lbl = b && b.querySelector('.pf-label');
+            if (lbl) lbl.textContent = 'Weather: ' + currentWeather;
+        }
+        function cycleWeather() {
+            currentWeather = WEATHERS[(WEATHERS.indexOf(currentWeather) + 1) % WEATHERS.length];
+            // Switching weather implies a daytime sky (leave night/battle as chosen).
+            if (BG_MODES[bgModeIdx] !== 'sky') { bgModeIdx = 0; setBgMode('sky'); }
+            else applyWeather();
+        }
+
+        // Candle bodies (little flames), shown in candle mode.
+        const candleGroup = new THREE.Group();
+        const waxMat = makeDitherMaterial({ light: '#f4ead0', mid: '#c8b48a', dark: '#6a5a3c', rim: true });
+        const flameMat = new THREE.MeshBasicMaterial({ color: '#ffcf6a' });
+        const candleSpots = [[-14, 0, 14], [16, 0, 10], [4, 0, -16], [-20, 0, -4]];
+        candleSpots.forEach((p) => {
+            const g = new THREE.Group();
+            const wax = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 3.2, 8), waxMat);
+            wax.position.y = 1.6; wax.castShadow = true; g.add(wax);
+            const flame = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.4, 6), flameMat);
+            flame.position.y = 3.9; g.add(flame);
+            g.position.set(p[0], 0, p[2]);
+            candleGroup.add(g);
+        });
+        scene.add(candleGroup);
+
+        // --- The BOOMBOX: the radio, as a little 3D creature ---
+        const bbBodyMat  = makeDitherMaterial({ light: '#9aa0ac', mid: '#565c68', dark: '#20242e', rim: true, tint: 0.4 });
+        const bbDarkMat  = makeDitherMaterial({ light: '#3c3f48', mid: '#20222a', dark: '#0a0a0e', rim: true });
+        const bbGoldMat  = makeDitherMaterial({ light: '#ffe08a', mid: '#e0932a', dark: '#7a4a12', rim: true });
+        const boomGroup = new THREE.Group();
+        (function buildBoombox() {
+            const body = new THREE.Mesh(new THREE.BoxGeometry(9, 5, 3.2), bbBodyMat);
+            body.castShadow = true; body.receiveShadow = true; boomGroup.add(body);
+            const handle = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.28, 6, 14, Math.PI), bbDarkMat);
+            handle.position.set(0, 2.5, 0); handle.castShadow = true; boomGroup.add(handle);
+            const spkGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.5, 16);
+            const spkL = new THREE.Mesh(spkGeo, bbDarkMat); spkL.rotation.x = Math.PI / 2; spkL.position.set(-2.6, -0.2, 1.65); spkL.castShadow = true; boomGroup.add(spkL);
+            const spkR = spkL.clone(); spkR.position.x = 2.6; boomGroup.add(spkR);
+            const coneGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.35, 12);
+            [-2.6, 2.6].forEach(x => { const c = new THREE.Mesh(coneGeo, bbGoldMat); c.rotation.x = Math.PI / 2; c.position.set(x, -0.2, 1.95); boomGroup.add(c); });
+            const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.5, 12), bbGoldMat); dial.rotation.x = Math.PI / 2; dial.position.set(0, 1.1, 1.7); boomGroup.add(dial);
+            const cassette = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.3, 0.3), bbDarkMat); cassette.position.set(0, -0.4, 1.65); boomGroup.add(cassette);
+            const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 6, 6), bbDarkMat); antenna.position.set(4.2, 3.4, -0.8); antenna.rotation.z = -0.42; antenna.castShadow = true; boomGroup.add(antenna);
+            boomGroup.__spk = [spkL.position, spkR.position];
+        })();
+        boomGroup.position.set(0, 4, 22);
+        scene.add(boomGroup);
+
+        // Sound rings that pulse from the speakers while playing.
+        const soundRings = [];
+        boomGroup.__spk.forEach(sp => {
+            for (let k = 0; k < 3; k++) {
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.12, 4, 16),
+                    new THREE.MeshBasicMaterial({ color: '#ffe6a0', transparent: true, opacity: 0 }));
+                ring.position.set(sp.x, sp.y, 2.1); ring.userData.k = k;
+                boomGroup.add(ring); soundRings.push(ring);
+            }
+        });
+
+        const boombox = { group: boomGroup, velocity: new THREE.Vector3(), radius: 4, squishY: 1, squishTimer: 0, spawnLevel: 0, docked: false };
+
+        // --- RADIO DOCK + LASSO -------------------------------------------------
+        // The boombox lives in the world OR gets reeled into the top-right bubble,
+        // where it's shown as a frozen, ENLARGED 3D sprite (rendered into a
+        // scissored viewport over the bubble). A lasso fires a chain-physics
+        // tendril that grabs the boombox and reels it in. Music keeps playing;
+        // pixel notes puff from the bubble.
+        const dockScene = new THREE.Scene();
+        const dockCam = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
+        const bubbleEl = document.getElementById('radio-bubble');
+        const bubbleNotesEl = document.getElementById('bubble-notes');
+        const _ORIGIN = new THREE.Vector3(0, 0, 0);
+        let _noteT = 0;
+
+        // The dock is a LOW-RES 3D SPHERE (a dithered soap-bubble membrane) that
+        // the radio floats into and breaks through. `u_pulse` ripples the membrane
+        // when the radio punches in.
+        const bubbleMembraneFrag = `
+            uniform float u_pulse; varying vec3 vN; varying float vFace;
+            ${BAYER_GLSL}
+            void main(){
+                float fres = pow(1.0 - abs(vN.z), 1.5);          // bright rim (bubble edge)
+                float d = getDither(floor(gl_FragCoord.xy / 2.0));
+                float a = 0.20 + fres * 0.62 + u_pulse * 0.3;
+                if (step(d, a) < 0.5) discard;                    // dithered → voxel membrane
+                vec3 col = mix(vec3(0.60, 0.82, 1.0), vec3(1.0), fres);
+                gl_FragColor = vec4(col, 0.62);
+            }`;
+        function makeMembraneMat() {
+            return new THREE.ShaderMaterial({
+                transparent: true, depthWrite: false, side: THREE.DoubleSide,
+                uniforms: { u_time: { value: 0 }, u_pulse: { value: 0 } },
+                vertexShader: `
+                    uniform float u_time, u_pulse; varying vec3 vN; varying float vFace;
+                    void main(){
+                        vN = normalize(normalMatrix * normal);
+                        float rip = sin(u_time * 9.0 + position.y * 4.0 + position.x * 3.0) * u_pulse * 0.35;
+                        vec3 p = position * (1.0 + rip + u_pulse * 0.14);
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+                    }`,
+                fragmentShader: bubbleMembraneFrag
+            });
+        }
+        const dockSphereMat = makeMembraneMat();
+        const dockSphere = new THREE.Mesh(new THREE.IcosahedronGeometry(6, 1), dockSphereMat);
+        dockSphere.renderOrder = 2;               // membrane draws over the boombox
+        dockScene.add(dockSphere);
+
+        // The Mario-death-style bubble that carries the radio while it floats in.
+        const floatBubbleMat = makeMembraneMat();
+        const floatBubble = new THREE.Mesh(new THREE.IcosahedronGeometry(6.2, 1), floatBubbleMat);
+        floatBubble.visible = false; floatBubble.renderOrder = 3;
+        scene.add(floatBubble);
+
+        // Float-in state machine + a global freeze while the radio travels.
+        let floatState = null, floatT = 0;
+        const FLOAT_DUR = 1.15;
+        const floatStart = new THREE.Vector3(), _floatTmp = new THREE.Vector3(), _floatP = new THREE.Vector3();
+        let dockFreeze = false;
+
+        function bubbleHitTest(x, y) { const r = bubbleEl.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; }
+        function spawnBubbleNote() {
+            const n = document.createElement('span'); n.className = 'bnote';
+            n.textContent = Math.random() < 0.5 ? '♪' : '♫';
+            n.style.left = (26 + Math.random() * 60) + '%';
+            n.style.setProperty('--nx', ((Math.random() - 0.5) * 42 | 0) + 'px');
+            n.style.setProperty('--nr', ((Math.random() - 0.5) * 40 | 0) + 'deg');
+            bubbleNotesEl.appendChild(n);
+            setTimeout(() => n.remove(), 1650);
+        }
+
+        function dockBoombox() {
+            if (boombox.docked) return;
+            boombox.docked = true; boombox.isDragged = false; draggedBoombox = null;
+            boombox.velocity.set(0, 0, 0);
+            // Freeze the render angle: aim dockCam along the MAIN camera's view dir
+            // so the sprite shows the same face it had out in the world.
+            boomGroup.updateMatrixWorld();
+            const q = new THREE.Quaternion(); boomGroup.getWorldQuaternion(q);
+            scene.remove(boomGroup); dockScene.add(boomGroup);
+            boomGroup.quaternion.copy(q);
+            boomGroup.position.set(9, -1, 0);               // glides to centre of the sphere
+            const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+            dockCam.position.copy(fwd).multiplyScalar(-18); dockCam.position.y += 1.0;
+            dockCam.lookAt(0, 0, 0);
+            dockSphereMat.uniforms.u_pulse.value = 1.0;     // membrane ripples as it breaks through
+            soundRings.forEach(r => r.visible = false);
+            bubbleEl.classList.add('docked'); bubbleEl.classList.remove('empty');
+            bubbleEl.classList.remove('absorb'); void bubbleEl.offsetWidth; bubbleEl.classList.add('absorb');
+            const hint = document.getElementById('bubble-hint'); if (hint) hint.textContent = 'eject ⏏';
+        }
+        function undockBoombox() {
+            if (!boombox.docked) return;
+            boombox.docked = false;
+            dockScene.remove(boomGroup); scene.add(boomGroup);
+            const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+            const pos = camera.position.clone().addScaledVector(fwd, 44); pos.y = Math.max(8, pos.y);
+            const lim = arenaSize / 2 - boombox.radius;
+            pos.x = Math.max(-lim, Math.min(lim, pos.x)); pos.z = Math.max(-lim, Math.min(lim, pos.z));
+            boomGroup.position.copy(pos);
+            boombox.velocity.set((Math.random() - 0.5) * 6, 10, (Math.random() - 0.5) * 6);
+            bubbleEl.classList.remove('docked'); bubbleEl.classList.add('empty');
+            bubbleEl.classList.remove('absorb'); void bubbleEl.offsetWidth; bubbleEl.classList.add('absorb');
+            const hint = document.getElementById('bubble-hint'); if (hint) hint.textContent = '▽ dock radio';
+            endLasso();
+        }
+
+        // Magnetise: the whole scene FREEZES, the radio disappears from the world
+        // and floats up in a bubble (Mario-death-bubble style) toward the dock,
+        // then breaks through the sphere's voxel membrane and reappears inside.
+        function anchorWorld(out) {
+            const r = bubbleEl.getBoundingClientRect();
+            const ndcX = ((r.left + r.width / 2) / window.innerWidth) * 2 - 1;
+            const ndcY = -((r.top + r.height * 0.5) / window.innerHeight) * 2 + 1;
+            const cam = curCam();
+            out.set(ndcX, ndcY, 0.5).unproject(cam);
+            const dir = out.sub(cam.position).normalize();
+            return out.copy(cam.position).addScaledVector(dir, 24);
+        }
+        function startFloatToDock() {
+            if (boombox.docked || floatState) return;
+            floatState = 'floating'; floatT = 0; dockFreeze = true;
+            boombox.isDragged = true; boombox.velocity.set(0, 0, 0);
+            floatStart.copy(boomGroup.position);
+            floatBubble.visible = true; floatBubbleMat.uniforms.u_pulse.value = 0.6;
+            endLasso();
+        }
+        function updateFloat(dt, time) {
+            if (floatState !== 'floating') return;
+            floatT += dt / FLOAT_DUR;
+            const t = Math.min(1, floatT);
+            const A = anchorWorld(_floatTmp);
+            _floatP.copy(floatStart).lerp(A, t * t * (3 - 2 * t));   // ease
+            _floatP.y += Math.sin(t * Math.PI) * 12 + Math.sin(time * 12) * 1.4;  // bow up + bob
+            _floatP.x += Math.sin(time * 9) * 1.2;
+            boomGroup.position.copy(_floatP);
+            floatBubble.position.copy(_floatP);
+            const wob = 1 + Math.sin(time * 10) * 0.05;
+            floatBubble.scale.set(wob, 1 / wob, wob);
+            floatBubbleMat.uniforms.u_time.value = time;
+            if (floatT >= 1) {
+                floatState = null; dockFreeze = false;
+                floatBubble.visible = false;
+                dockBoombox();          // punch through the membrane into the sphere
+            }
+        }
+
+        // Lasso: a verlet chain from a bubble-anchor out to the boombox, reeling it
+        // in with rope physics.
+        const LASSO = { active: false, phase: 'idle', castT: 0, n: 16, pts: [], old: [], seg: [], anchor: new THREE.Vector3() };
+        (function buildLasso() {
+            const segMat = new THREE.MeshBasicMaterial({ color: '#e6d29a' });
+            const segGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+            for (let i = 0; i < LASSO.n; i++) {
+                const m = new THREE.Mesh(segGeo, segMat); m.visible = false; scene.add(m); LASSO.seg.push(m);
+                LASSO.pts.push(new THREE.Vector3()); LASSO.old.push(new THREE.Vector3());
+            }
+        })();
+        function anchorWorld(out) {
+            const r = bubbleEl.getBoundingClientRect();
+            const ndcX = ((r.left + r.width / 2) / window.innerWidth) * 2 - 1;
+            const ndcY = -((r.top + r.height * 0.62) / window.innerHeight) * 2 + 1;
+            const cam = curCam();
+            out.set(ndcX, ndcY, 0.5).unproject(cam);
+            const dir = out.sub(cam.position).normalize();
+            return out.copy(cam.position).addScaledVector(dir, 26);
+        }
+        function fireLasso() {
+            if (boombox.docked || LASSO.active) return;
+            LASSO.active = true; LASSO.phase = 'cast'; LASSO.castT = 0;
+            anchorWorld(LASSO.anchor);
+            for (let i = 0; i < LASSO.n; i++) {
+                const t = i / (LASSO.n - 1);
+                LASSO.pts[i].copy(LASSO.anchor).lerp(boombox.group.position, t);
+                LASSO.old[i].copy(LASSO.pts[i]);
+                LASSO.seg[i].visible = true;
+            }
+        }
+        function endLasso() { LASSO.active = false; LASSO.phase = 'idle'; LASSO.seg.forEach(m => m.visible = false); }
+        function updateLasso(dt) {
+            if (!LASSO.active) return;
+            anchorWorld(LASSO.anchor);
+            const pts = LASSO.pts, old = LASSO.old, n = LASSO.n, bp = boombox.group.position;
+            for (let i = 1; i < n - 1; i++) {           // verlet interior points
+                const p = pts[i], o = old[i];
+                const vx = (p.x - o.x) * 0.92, vy = (p.y - o.y) * 0.92, vz = (p.z - o.z) * 0.92;
+                o.copy(p);
+                p.x += vx; p.y += vy - 22 * dt * dt; p.z += vz;
+            }
+            LASSO.castT += dt;
+            if (LASSO.phase === 'cast' && LASSO.castT > 0.32) { LASSO.phase = 'reel'; boombox.isDragged = true; boombox.velocity.set(0, 0, 0); }
+            if (LASSO.phase === 'reel') {
+                bp.lerp(LASSO.anchor, 1 - Math.exp(-dt * 3.2));
+                if (bp.distanceTo(LASSO.anchor) < 9) { dockBoombox(); endLasso(); return; }
+            }
+            pts[0].copy(LASSO.anchor); pts[n - 1].copy(bp);
+            const rest = LASSO.anchor.distanceTo(bp) / (n - 1);
+            for (let k = 0; k < 4; k++) {               // distance-constraint relax
+                for (let i = 0; i < n - 1; i++) {
+                    const a = pts[i], b = pts[i + 1];
+                    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+                    const d = Math.hypot(dx, dy, dz) || 1e-4, diff = (d - rest) / d * 0.5;
+                    const ox = dx * diff, oy = dy * diff, oz = dz * diff;
+                    if (i !== 0) { a.x += ox; a.y += oy; a.z += oz; }
+                    if (i + 1 !== n - 1) { b.x -= ox; b.y -= oy; b.z -= oz; }
+                }
+                pts[0].copy(LASSO.anchor); pts[n - 1].copy(bp);
+            }
+            for (let i = 0; i < n; i++) LASSO.seg[i].position.copy(pts[i]);
+        }
+        // The lasso button + bubble clicks (elements exist — script is at body end).
+        const lassoBtn = document.getElementById('lasso-btn');
+        if (lassoBtn) lassoBtn.addEventListener('click', (e) => { e.stopPropagation(); if (boombox.docked) undockBoombox(); else startFloatToDock(); });
+        bubbleEl.addEventListener('click', () => { if (boombox.docked) undockBoombox(); });
+
+        let _npTimer = 0;
+        function showNowPlaying(name) {
+            const el = document.getElementById('now-playing');
+            if (!el) return;
+            el.textContent = '♫ ' + (name || '—');
+            el.classList.add('show'); _npTimer = 4.0;
+        }
+        function tuneBoombox() {
+            const radio = window.radio; if (!radio) return;
+            if (!radio.playing) radio.tune();
+            else { radio.stationIdx = (radio.stationIdx + 1) % radio.stations.length; radio.tune(); }
+            boombox.velocity.y = Math.max(boombox.velocity.y, 18);
+            boombox.squishTimer = 0.12;
+            const st = radio.stations[radio.stationIdx];
+            showNowPlaying(st ? st.name : '');
+        }
+        function updateBoombox(dt, time) {
+            const b = boombox, p = b.group.position;
+            if (b.docked) return;                 // frozen sprite in the bubble
+            if (!b.isDragged) {
+                b.velocity.y += gravity * dt;
+                p.addScaledVector(b.velocity, dt);
+                const bnd = arenaSize / 2 - b.radius;
+                if (Math.abs(p.x) > bnd) { p.x = Math.sign(p.x) * bnd; b.velocity.x *= -0.6; }
+                if (Math.abs(p.z) > bnd) { p.z = Math.sign(p.z) * bnd; b.velocity.z *= -0.6; }
+                const onGround = p.y <= floorY + b.radius;
+                if (onGround) {
+                    p.y = floorY + b.radius;
+                    if (Math.abs(b.velocity.y) > 6) b.squishTimer = 0.14;
+                    b.velocity.y *= -0.5; b.velocity.x *= 0.55; b.velocity.z *= 0.55;
+                    if (Math.abs(b.velocity.y) < 1) b.velocity.y = 0;
+                }
+                // Hop to the beat when it's resting on the ground.
+                if (reactive.beat && onGround) {
+                    b.velocity.y = 20 + reactive.level * 42;
+                    b.velocity.x += (Math.random() - 0.5) * 7; b.velocity.z += (Math.random() - 0.5) * 7;
+                    b.squishTimer = 0.1;
+                }
+            }
+            b.group.rotation.y = Math.sin(time * 0.5) * 0.16;
+            // Smooth squash-and-stretch (volume preserving).
+            let target = b.squishTimer > 0 ? 0.7 : 1.0 + Math.max(-20, Math.min(20, b.velocity.y)) * 0.006;
+            if (b.squishTimer > 0) b.squishTimer -= dt;
+            b.squishY += (target - b.squishY) * 0.14;
+            const sxz = 1 / Math.sqrt(Math.max(0.4, b.squishY));
+            b.group.scale.set(sxz, b.squishY, sxz);
+            // Sound rings pulse with the audio while a station plays.
+            const playing = window.radio && window.radio.playing;
+            const lvl = playing ? Math.max(0.2, reactive.level * 1.6 + reactive.beatPulse * 0.5) : 0;
+            soundRings.forEach(r => {
+                r.visible = !!playing;
+                const ph = (time * 1.5 + r.userData.k / 3.0) % 1.0;
+                const s = 0.5 + ph * 2.4; r.scale.set(s, s, 1);
+                r.material.opacity = playing ? lvl * (1.0 - ph) : 0;
+            });
+        }
+
+        // Blobs occasionally gather around the boombox.
+        let gatherActive = false, gatherTimer = 10;
+
+        let worldFog = new THREE.Fog('#bcd4e6', 80, 520);
+        let worldBg = new THREE.Color('#9fc0dd');
+        function applyFog() { scene.fog = (viewMode === 'iso' || battleBG) ? null : worldFog; }
+        function applyBg() { scene.background = battleBG ? null : worldBg; }   // battle pass shows through
+        function setAtmosphere(fogColor, fogNear, fogFar, bgHex, skyLo, skyHi) {
+            worldFog = new THREE.Fog(fogColor, fogNear, fogFar);
+            worldBg = new THREE.Color(bgHex);
+            skyMat.uniforms.uLo.value.set(skyLo); skyMat.uniforms.uHi.value.set(skyHi);
+            applyFog(); applyBg();
+        }
+        setAtmosphere('#bcd4e6', 80, 520, '#9fc0dd', '#d7e8f4', '#5f93cf');
+
+        const creatures = [];
+        // Creature shape database — each entry carries its silhouette radius `r`
+        // so the face can float just proud of the surface (no clipping).
+        // `fp` = the shape the creature stamps on the ground where it touches
+        // (its contact cross-section), used to paint footprint-shaped splotches.
+        const GEOM_DEFS = [
+            { geo: new THREE.SphereGeometry(2, 40, 40),               r: 2.0, fp: 'round' },
+            { geo: new THREE.BoxGeometry(3.2, 3.2, 3.2),              r: 1.9, fp: 'square' },
+            { geo: new THREE.CylinderGeometry(1.8, 1.8, 3.5, 24),     r: 1.9, fp: 'round' },
+            { geo: new THREE.DodecahedronGeometry(2.2),               r: 2.0, fp: 'round' },
+            { geo: new THREE.ConeGeometry(2.1, 3.8, 20),              r: 1.8, fp: 'round' },
+            { geo: new THREE.OctahedronGeometry(2.4),                 r: 1.9, fp: 'diamond' },
+            { geo: new THREE.TetrahedronGeometry(2.7),                r: 1.7, fp: 'triangle' },
+            { geo: new THREE.TorusGeometry(1.7, 0.72, 12, 24),        r: 1.9, fp: 'ring' },
+            { geo: new THREE.IcosahedronGeometry(2.2),                r: 2.0, fp: 'round' },
+            { geo: new THREE.CylinderGeometry(0.01, 2.3, 3.8, 4),     r: 1.8, fp: 'square' },   // square pyramid
+            { geo: new THREE.CylinderGeometry(1.6, 1.6, 3.4, 6),      r: 1.9, fp: 'hex' },      // hex prism
+            { geo: new THREE.SphereGeometry(2.1, 8, 6),               r: 2.0, fp: 'round' },    // faceted gem
+            { geo: new THREE.ConeGeometry(2.0, 3.4, 6),               r: 1.8, fp: 'hex' }       // faceted cone
+        ];
+        const IDLE_EMOTES = ['^_^', '-_-', 'o_o', '._.', ':D', '^v^', 'u_u', 'owo'];
+
+        // Cached emoticon-face textures (built once per glyph, reused everywhere).
+        const FACE_CACHE = {};
+        function faceTex(text) {
+            if (FACE_CACHE[text]) return FACE_CACHE[text];
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.clearRect(0, 0, 64, 64);
+            ctx.fillStyle = '#141014';
+            ctx.font = 'bold 24px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 32, 33);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            return (FACE_CACHE[text] = tex);
+        }
+
+        // Expressions grouped by mood; a creature's stable faceSeed keeps it from
+        // flickering between glyphs within a mood.
+        const FACE_SETS = {
+            idle:  ['^_^', '-_-', 'o_o', '._.'],
+            happy: ['^o^', '\\o/', ':D', '^v^'],
+            dance: ['>o<', '^3^', '\\o/', '>v<'],
+            hyper: ['XD', '>o<', '@o@', 'oOo'],
+            beat:  ['O_O', '*o*', '!o!', '0o0'],
+            blush: ['>//<', '^//^', 'e//e'],
+            drag:  ['@_@', 'x_x', 'O_O']
+        };
+        function creatureMood(c) {
+            if (c.isDragged) return 'drag';
+            if ((c.blushTimer || 0) > 0) return 'blush';
+            if (reactive.beat && reactive.level > 0.28) return 'beat';
+            if ((c.hyperTimer || 0) > 0) return 'hyper';
+            if (c.dancing) return 'dance';
+            if (reactive.active && reactive.level > 0.12) return 'happy';
+            return 'idle';
+        }
+        // Swap the face texture only when the mood actually changes (cheap).
+        function updateFaceExpression(c) {
+            const mood = creatureMood(c);
+            if (mood === c.faceMood) return;
+            c.faceMood = mood;
+            const set = FACE_SETS[mood] || FACE_SETS.idle;
+            c.faceMat.map = faceTex(set[Math.floor(c.faceSeed * set.length) % set.length]);
+            c.faceMat.needsUpdate = true;
+        }
+        // Point the face along the creature's heading (movement direction) and
+        // keep it a fixed distance proud of the body — counters group squash so
+        // it never sinks into the 3D model.
+        function orientFace(c, dt) {
+            const p = c.group.position;
+            if (c._px === undefined) { c._px = p.x; c._pz = p.z; c.heading = 0; }
+            const dx = p.x - c._px, dz = p.z - c._pz; c._px = p.x; c._pz = p.z;
+            if (dx * dx + dz * dz > 0.0004) {
+                let diff = Math.atan2(dx, dz) - c.heading;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                c.heading += diff * Math.min(1, dt * 8);
+            }
+            const gs = c.group.scale;
+            const r = c.faceR;
+            c.face.position.set(
+                Math.sin(c.heading) * r / (gs.x || 1),
+                Math.sin((c._px + c._pz) * 0.5) * 0.15,
+                Math.cos(c.heading) * r / (gs.z || 1));
+            c.face.rotation.set(0, c.heading, 0);
+        }
+        function makeParticleMat(col) { return new THREE.MeshBasicMaterial({ color: col }); }
+
+        const MAX_CREATURES = IS_MOBILE ? 26 : 48;   // cap keeps the O(n²) collisions cheap
+        function spawnCreature(x, z) {
+            if (creatures.length >= MAX_CREATURES) return;
+            const color = sampleColor();
+            const creature = {
+                group: new THREE.Group(),
+                velocity: new THREE.Vector3(0, 0, 0),
+                idleTimer: Math.random() * 2 + 0.5,
+                squishTimer: 0, squishY: 1, squishVel: 0,
+                radius: 2.0, isDragged: false,
+                dancing: false, danceIndex: 0, danceCount: 1,
+                joinT: 0, blushTimer: 0,
+                // Personality: how fast this friend moves + how high it bounces.
+                speedMul: 0.6 + Math.random() * 0.95,
+                bounceMul: 0.8 + Math.random() * 0.55,
+                pathSeed: Math.random() * 100.0,
+                faceSeed: Math.random(),
+                color, colorCss: '#' + color.getHexString()
+            };
+
+            const def = GEOM_DEFS[Math.floor(Math.random() * GEOM_DEFS.length)];
+            const geo = def.geo;
+            creature.body = new THREE.Mesh(geo, makeCreatureFromColor(color));
+            creature.group.add(creature.body);
+
+            // Silhouette halo for hover (hidden until hovered).
+            creature.hoverOutline = makeHoverOutline(geo);
+            creature.group.add(creature.hoverOutline);
+
+            const face = new THREE.Group();
+            const faceMat = new THREE.MeshBasicMaterial({ map: faceTex(IDLE_EMOTES[Math.floor(Math.random() * IDLE_EMOTES.length)]), transparent: true, depthWrite: false });
+            const faceMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), faceMat);
+            faceMesh.position.set(0, 0, 0);          // the `face` group carries the offset
+            face.add(faceMesh);
+            creature.face = face;
+            creature.faceMat = faceMat;
+            creature.faceR = def.r + 1.4;            // float just proud of the surface
+            creature.footprint = def.fp;             // shape stamped into the paint
+            creature.faceMood = null;
+            creature.group.add(face);
+
+            creature.group.position.set(x, 15, z);
+            scene.add(creature.group);
+            creatures.push(creature);
+        }
+
+        spawnCreature(0, 0);
+        // Spawn a friend on the ground within the camera's current view.
+        function spawnInView() {
+            const cam = curCam();
+            const dir = new THREE.Vector3(); cam.getWorldDirection(dir);
+            const p = cam.position.clone().addScaledVector(dir, 42);
+            const lim = arenaSize / 2 - 8;
+            const x = Math.max(-lim, Math.min(lim, p.x + (Math.random() - 0.5) * 22));
+            const z = Math.max(-lim, Math.min(lim, p.z + (Math.random() - 0.5) * 22));
+            spawnCreature(x, z);
+        }
+        document.getElementById('spawn-btn').addEventListener('click', spawnInView);
+
+        // Clear Space: remove every friend, particle, and all painted colour.
+        function clearSpace() {
+            creatures.forEach(c => scene.remove(c.group));
+            creatures.length = 0;
+            particles.forEach(p => scene.remove(p)); particles.length = 0;
+            danceParticipants = []; danceActive = false;
+            hoveredCreature = null; followSubject = null;
+            trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+            trailDirty = true;
+        }
+        document.getElementById('clear-btn').addEventListener('click', clearSpace);
+
+        const particles = [];
+        const partGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);   // small physics voxels (Noita-ish)
+        function spawnParticles(pos, vel, color, colorCss) {
+            if (particles.length > (IS_MOBILE ? 90 : 170)) return;
+            const mat = makeParticleMat(color || new THREE.Color('#ffffff'));
+            for (let i = 0; i < 5; i++) {
+                const p = new THREE.Mesh(partGeo, mat);
+                p.position.copy(pos); p.position.y -= 1.0;
+                // Low, splashy arcs that pile into little coloured voxel splotches.
+                p.velocity = new THREE.Vector3((Math.random() - 0.5) * 10 + vel.x * 0.25, Math.random() * 8 + 3, (Math.random() - 0.5) * 10 + vel.z * 0.25);
+                p.castShadow = true;
+                p.life = 1.0; p._trailT = 0; p._trailCss = colorCss || '#ffffff'; scene.add(p); particles.push(p);
+            }
+        }
+
+        // --- 5. Physics constants ---
+        const gravity = -100.0;
+        const maxVelocity = 120.0;
+        const bounceFactor = 0.6;
+        const friction = 0.55;   // less slip — friends grip the floor, slide less
+        const floorY = 0;
+
+        // --- 6. Input: free-fly camera + creature grab ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const keys = Object.create(null);
+
+        let draggedCreature = null, creatureGrabMoved = 0;
+        let draggedBoombox = null, boomGrabMoved = 0;
+        let hoveredCreature = null, followSubject = null;
+        let dragPlane = new THREE.Plane();
+        let previousMousePos = new THREE.Vector3();
+        let lookDragging = false, dragMoved = 0;
+        let lastMx = 0, lastMy = 0;
+        let pointerLocked = false;
+        let directorMode = false;
+        let isoOrbiting = false, isoPanning = false;
+        const isoPrev = { x: 0, y: 0 };
+
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        function overUI(target) { return target.closest && target.closest('.ui-block'); }
+
+        // Try to grab whatever is under the pointer (boombox or a friend).
+        // Returns true if the press was consumed. Uses the ACTIVE camera.
+        function tryGrabAt(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, curCam());
+            if (!boombox.docked && raycaster.intersectObject(boombox.group, true).length > 0) {
+                // Grab the boombox to drag/throw it; a click (no drag) opens its UI.
+                draggedBoombox = boombox; boombox.isDragged = true; boombox.velocity.set(0, 0, 0);
+                const bd = new THREE.Vector3(); curCam().getWorldDirection(bd);
+                dragPlane.setFromNormalAndCoplanarPoint(bd.negate(), boombox.group.position);
+                raycaster.ray.intersectPlane(dragPlane, previousMousePos);
+                boomGrabMoved = 0;
+                return true;
+            }
+            const intersects = raycaster.intersectObjects(creatures.map(c => c.group), true);
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                while (obj.parent && obj.parent !== scene) obj = obj.parent;
+                draggedCreature = creatures.find(c => c.group === obj);
+                if (draggedCreature) {
+                    draggedCreature.isDragged = true;
+                    draggedCreature.dancing = false;
+                    const camDir = new THREE.Vector3();
+                    curCam().getWorldDirection(camDir);
+                    dragPlane.setFromNormalAndCoplanarPoint(camDir.negate(), draggedCreature.group.position);
+                    raycaster.ray.intersectPlane(dragPlane, previousMousePos);
+                    draggedCreature.velocity.set(0, 0, 0);
+                    creatureGrabMoved = 0;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        canvasEl.addEventListener('mousedown', (event) => {
+            if (directorMode) return;   // camera is on autopilot
+            lastMx = event.clientX; lastMy = event.clientY;
+            isoPrev.x = event.clientX; isoPrev.y = event.clientY;
+            if (pointerLocked) return;
+
+            if (event.button === 2) {   // right-drag = re-angle / orbit
+                if (viewMode === 'iso') { isoOrbiting = true; } else { lookDragging = true; dragMoved = 0; }
+                return;
+            }
+            if (tryGrabAt(event.clientX, event.clientY)) return;
+            followSubject = null;                 // pressing empty space stops following
+            // Left-drag empty space: free = look, iso = pan.
+            if (viewMode === 'iso') isoPanning = true;
+            else { lookDragging = true; dragMoved = 0; }
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            if (pointerLocked) {
+                camYaw   -= event.movementX * 0.0022;
+                camPitch  = Math.max(-1.45, Math.min(1.45, camPitch - event.movementY * 0.0022));
+                return;
+            }
+            if (draggedCreature) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, curCam());
+                const currentPos = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(dragPlane, currentPos)) {
+                    creatureGrabMoved += currentPos.distanceTo(previousMousePos);
+                    draggedCreature.velocity.copy(currentPos).sub(previousMousePos).multiplyScalar(60);
+                    draggedCreature.group.position.copy(currentPos);
+                    previousMousePos.copy(currentPos);
+                }
+            } else if (draggedBoombox) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, curCam());
+                const cp = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(dragPlane, cp)) {
+                    boomGrabMoved += cp.distanceTo(previousMousePos);
+                    boombox.velocity.copy(cp).sub(previousMousePos).multiplyScalar(40);
+                    boombox.group.position.copy(cp); previousMousePos.copy(cp);
+                }
+            } else if (isoOrbiting) {
+                const dx = event.clientX - isoPrev.x, dy = event.clientY - isoPrev.y;
+                isoPrev.x = event.clientX; isoPrev.y = event.clientY;
+                isoTheta -= dx * 0.01;
+                isoPhi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, isoPhi - dy * 0.01));
+                updateIsoCam();
+            } else if (isoPanning) {
+                const dx = event.clientX - isoPrev.x, dy = event.clientY - isoPrev.y;
+                isoPrev.x = event.clientX; isoPrev.y = event.clientY;
+                const panSpeed = isoFrustum / window.innerHeight;
+                const oldPos = isoCam.position.clone();
+                isoCam.translateX(-dx * panSpeed);
+                isoCam.translateY(dy * panSpeed);
+                isoTarget.add(isoCam.position.clone().sub(oldPos));
+                updateIsoCam();
+            } else if (lookDragging) {
+                const dx = event.clientX - lastMx, dy = event.clientY - lastMy;
+                lastMx = event.clientX; lastMy = event.clientY;
+                dragMoved += Math.abs(dx) + Math.abs(dy);
+                camYaw   -= dx * 0.005;
+                camPitch  = Math.max(-1.45, Math.min(1.45, camPitch - dy * 0.005));
+            } else if (!directorMode) {
+                // Idle: highlight the creature under the cursor (pastel-yellow hover).
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, curCam());
+                const hit = raycaster.intersectObjects(creatures.map(c => c.group), true);
+                let nh = null;
+                if (hit.length) { let o = hit[0].object; while (o.parent && o.parent !== scene) o = o.parent; nh = creatures.find(c => c.group === o) || null; }
+                if (nh !== hoveredCreature) {
+                    if (hoveredCreature && hoveredCreature.hoverOutline) hoveredCreature.hoverOutline.visible = false;
+                    hoveredCreature = nh;
+                    if (nh && nh.hoverOutline) nh.hoverOutline.visible = true;
+                    canvasEl.style.cursor = nh ? 'pointer' : '';
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', (event) => {
+            if (event.button === 2) isoOrbiting = false;
+            if (draggedCreature) {
+                draggedCreature.isDragged = false;
+                if (creatureGrabMoved < 3) followSubject = draggedCreature;   // click → follow this friend
+                else if (draggedCreature.velocity.length() > maxVelocity) draggedCreature.velocity.setLength(maxVelocity);
+                draggedCreature = null;
+            }
+            if (draggedBoombox) {
+                boombox.isDragged = false;
+                if (boomGrabMoved >= 3 && bubbleHitTest(event.clientX, event.clientY)) dockBoombox();  // dropped in the bubble
+                else if (boomGrabMoved < 3) openRadioUI();     // a click → open the radio UI
+                else if (boombox.velocity.length() > maxVelocity) boombox.velocity.setLength(maxVelocity);
+                draggedBoombox = null;
+            }
+            // A quick click on empty space (barely moved) → enter mouse-look (free view only).
+            if (lookDragging && dragMoved < 5 && !pointerLocked && viewMode === 'free') {
+                try { canvasEl.requestPointerLock(); } catch (_) {}
+            }
+            lookDragging = false; isoPanning = false;
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            pointerLocked = (document.pointerLockElement === canvasEl);
+        });
+
+        // Render resolution scales with zoom: zooming/telephoto raises the render
+        // height so distant creatures gain real pixels (finer dither) instead of
+        // turning to mush. Quantized so it doesn't thrash the GL buffer.
+        let curRenderH = RENDER_H;
+        function zoomFactor() {
+            return (viewMode === 'iso' && !directorMode)
+                ? Math.max(1, Math.min(2.0, 96 / isoFrustum))
+                : Math.max(1, Math.min(2.0, 60 / camFov));
+        }
+        function updateRenderScale() {
+            const target = Math.round(RENDER_H * zoomFactor() / 30) * 30;
+            if (target !== curRenderH) { curRenderH = target; renderer.setSize(curRenderH * aspect, curRenderH, false); }
+        }
+
+        canvasEl.addEventListener('wheel', (event) => {
+            if (viewMode === 'iso' && !directorMode) {
+                isoFrustum = Math.max(30, Math.min(220, isoFrustum + event.deltaY * 0.08));
+                applyIsoFrustum();
+            } else {
+                camFov = Math.max(25, Math.min(90, camFov + event.deltaY * 0.03));
+                camera.fov = camFov; camera.updateProjectionMatrix();
+            }
+            updateRenderScale();
+        }, { passive: true });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.target && e.target.closest && e.target.closest('.win')) return; // typing in the window
+            const k = e.key.toLowerCase();
+            keys[k] = true;
+            if (['w','a','s','d',' '].includes(k)) e.preventDefault();
+            if (e.key === 'Shift') keys['shift'] = true;
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+            if (e.key === 'Shift') keys['shift'] = false;
+        });
+
+        // --- Touch controls (mobile): 1 finger = look / drag a friend / tap the
+        // boombox; 2 fingers = pinch-zoom + pan. ---
+        let touchMode = 0, tLastX = 0, tLastY = 0, tMoved = 0, pinchDist = 0, touchGrab = null;
+        function touchNDC(t) { mouse.x = (t.clientX / window.innerWidth) * 2 - 1; mouse.y = -(t.clientY / window.innerHeight) * 2 + 1; }
+        canvasEl.addEventListener('touchstart', (e) => {
+            if (directorMode) return;
+            if (e.touches.length === 1) {
+                const t = e.touches[0]; tLastX = t.clientX; tLastY = t.clientY; tMoved = 0; touchMode = 1; touchGrab = null;
+                touchNDC(t); raycaster.setFromCamera(mouse, curCam());
+                if (!boombox.docked && raycaster.intersectObject(boombox.group, true).length > 0) {
+                    touchGrab = 'boombox'; boombox.isDragged = true; boombox.velocity.set(0, 0, 0); boomGrabMoved = 0;
+                    const bd = new THREE.Vector3(); curCam().getWorldDirection(bd); dragPlane.setFromNormalAndCoplanarPoint(bd.negate(), boombox.group.position); raycaster.ray.intersectPlane(dragPlane, previousMousePos);
+                }
+                else {
+                    const hit = raycaster.intersectObjects(creatures.map(c => c.group), true);
+                    if (hit.length > 0) {
+                        let o = hit[0].object; while (o.parent && o.parent !== scene) o = o.parent;
+                        const c = creatures.find(cc => cc.group === o);
+                        if (c) { touchGrab = c; c.isDragged = true; c.dancing = false; const cd = new THREE.Vector3(); curCam().getWorldDirection(cd); dragPlane.setFromNormalAndCoplanarPoint(cd.negate(), c.group.position); raycaster.ray.intersectPlane(dragPlane, previousMousePos); c.velocity.set(0, 0, 0); }
+                    }
+                }
+            } else if (e.touches.length === 2) {
+                touchMode = 2; touchGrab = null;
+                const a = e.touches[0], b = e.touches[1];
+                pinchDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                tLastX = (a.clientX + b.clientX) / 2; tLastY = (a.clientY + b.clientY) / 2;
+            }
+            e.preventDefault();
+        }, { passive: false });
+        canvasEl.addEventListener('touchmove', (e) => {
+            if (directorMode) return;
+            if (touchMode === 1 && e.touches.length === 1) {
+                const t = e.touches[0]; const dx = t.clientX - tLastX, dy = t.clientY - tLastY; tLastX = t.clientX; tLastY = t.clientY; tMoved += Math.abs(dx) + Math.abs(dy);
+                if (touchGrab === 'boombox') {
+                    touchNDC(t); raycaster.setFromCamera(mouse, curCam()); const cp = new THREE.Vector3();
+                    if (raycaster.ray.intersectPlane(dragPlane, cp)) { boomGrabMoved += cp.distanceTo(previousMousePos); boombox.velocity.copy(cp).sub(previousMousePos).multiplyScalar(40); boombox.group.position.copy(cp); previousMousePos.copy(cp); }
+                } else if (touchGrab) {
+                    touchNDC(t); raycaster.setFromCamera(mouse, curCam()); const cp = new THREE.Vector3();
+                    if (raycaster.ray.intersectPlane(dragPlane, cp)) { touchGrab.velocity.copy(cp).sub(previousMousePos).multiplyScalar(60); touchGrab.group.position.copy(cp); previousMousePos.copy(cp); }
+                } else if (!touchGrab) {
+                    if (viewMode === 'iso') {
+                        isoTheta -= dx * 0.01;
+                        isoPhi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, isoPhi - dy * 0.01));
+                        updateIsoCam();
+                    } else {
+                        camYaw -= dx * 0.005; camPitch = Math.max(-1.45, Math.min(1.45, camPitch - dy * 0.005));
+                    }
+                }
+            } else if (touchMode === 2 && e.touches.length === 2) {
+                const a = e.touches[0], b = e.touches[1];
+                const nd = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                const mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2, dx = mx - tLastX, dy = my - tLastY; tLastX = mx; tLastY = my;
+                if (viewMode === 'iso') {
+                    isoFrustum = Math.max(30, Math.min(220, isoFrustum + (pinchDist - nd) * 0.35)); pinchDist = nd;
+                    applyIsoFrustum();
+                    const panSpeed = isoFrustum / window.innerHeight;
+                    const oldPos = isoCam.position.clone();
+                    isoCam.translateX(-dx * panSpeed); isoCam.translateY(dy * panSpeed);
+                    isoTarget.add(isoCam.position.clone().sub(oldPos));
+                    updateIsoCam();
+                } else {
+                    camFov = Math.max(25, Math.min(90, camFov + (pinchDist - nd) * 0.15)); pinchDist = nd;
+                    camera.fov = camFov; camera.updateProjectionMatrix();
+                    lookVectors();
+                    camPos.addScaledVector(_right, -dx * 0.14); camPos.addScaledVector(_fwd, dy * 0.14);
+                    camPos.y = Math.max(4, Math.min(220, camPos.y)); camPos.x = Math.max(-320, Math.min(320, camPos.x)); camPos.z = Math.max(-320, Math.min(320, camPos.z));
+                }
+                updateRenderScale();
+            }
+            e.preventDefault();
+        }, { passive: false });
+        canvasEl.addEventListener('touchend', () => {
+            if (touchGrab === 'boombox') {
+                boombox.isDragged = false;
+                if (tMoved >= 12 && bubbleHitTest(tLastX, tLastY)) dockBoombox();   // dragged into the bubble
+                else if (tMoved < 12) openRadioUI();      // tap → open radio UI
+                else if (boombox.velocity.length() > maxVelocity) boombox.velocity.setLength(maxVelocity);
+            } else if (touchGrab) {
+                const c = touchGrab; if (c.velocity.length() > maxVelocity) c.velocity.setLength(maxVelocity); c.isDragged = false;
+            }
+            touchGrab = null; touchMode = 0;
+        });
+
+        // --- 7. Choreography: a dance that grows by contact ---
+        let danceUntil = 0, danceCooldown = 5, danceFormation = 'circle', danceActive = false;
+        const danceCenter = new THREE.Vector3();
+        let danceParticipants = [];
+
+        function updateDance(now, dt) {
+            if (danceActive) {
+                // Keep the roster clean and re-number members each frame (new
+                // members can join mid-dance via contact — see the collision loop).
+                danceParticipants = danceParticipants.filter(c => creatures.indexOf(c) !== -1 && !c.isDragged);
+                if (now >= danceUntil || danceParticipants.length === 0) {
+                    danceParticipants.forEach(c => { c.dancing = false; c.joinT = 0; });
+                    danceParticipants = []; danceActive = false;
+                    danceCooldown = 3 + Math.random() * 5;   // regroup sooner → dances happen more often
+                    return;
+                }
+                const n = danceParticipants.length;
+                danceParticipants.forEach((c, i) => { c.dancing = true; c.danceIndex = i; c.danceCount = n; });
+                // Ants at the tail occasionally break off the line and wander away.
+                if (danceFormation === 'line' && n > 2 && Math.random() < 0.006) {
+                    const leaver = danceParticipants.pop(); leaver.dancing = false;
+                }
+                return;
+            }
+            danceCooldown -= dt;
+            const eligible = creatures.filter(c => !c.isDragged);
+            // Dances self-start even without audio (bee/ant social behaviour is the
+            // creatures' baseline); music just makes them more frequent + energetic.
+            const wantDance = reactive.active ? reactive.level > 0.05 : true;
+            if (wantDance && danceCooldown <= 0 && eligible.length >= 2) {
+                // Seed with one friend + its nearest neighbour; the rest join by contact.
+                const seed = eligible[Math.floor(Math.random() * eligible.length)];
+                let nn = null, nd = 1e9;
+                for (const c of eligible) if (c !== seed) { const d = c.group.position.distanceTo(seed.group.position); if (d < nd) { nd = d; nn = c; } }
+                danceParticipants = nn ? [seed, nn] : [seed];
+                // Favour LOOSE following / branching; figure-8 waggle is now rare.
+                danceFormation = ['follow', 'line', 'branch', 'follow', 'circle', 'waggle'][Math.floor(Math.random() * 6)];
+                danceCenter.copy(seed.group.position); danceCenter.y = 0;
+                danceParticipants.forEach((c, i) => { c.dancing = true; c.joinT = 0; c.danceIndex = i; c.danceCount = danceParticipants.length; });
+                danceActive = true;
+                danceUntil = now + Math.max(9, 14 * reactive.beatInterval);
+            }
+        }
+
+        // A blob that bumps into an active dancer joins the formation.
+        function danceTryRecruit(c1, c2, now) {
+            if (!danceActive || c1.dancing === c2.dancing) return false;
+            const joiner = c1.dancing ? c2 : c1;
+            if (joiner.isDragged) return false;
+            joiner.dancing = true; joiner.joinT = 0;   // eases in (see updateCreature) → "chooses" to join
+            if (danceParticipants.indexOf(joiner) === -1) danceParticipants.push(joiner);
+            danceUntil = Math.max(danceUntil, now + 4);   // growing party lasts longer
+            return true;
+        }
+
+        // --- Jello soft-body: the contact side squishes then springs back ------
+        // `jelloHit` records the contact axis (world) + how hard; `applyJello`
+        // springs the compression back to round with a little overshoot (wobble)
+        // and feeds the per-creature squash uniforms (see blobVert). Because the
+        // shape flattens against the contact plane it stops clipping through the
+        // floor / other creatures.
+        function jelloHit(c, nx, ny, nz, amount) {
+            if (!c.sqAxisW) { c.sqAxisW = new THREE.Vector3(0, 1, 0); c.sq = 1; c.sqV = 0; }
+            c.sqAxisW.set(nx, ny, nz);
+            c.sq = Math.min(c.sq, 1.0 - Math.max(0, Math.min(0.5, amount)));
+        }
+        const _jn = new THREE.Vector3();
+        function applyJello(c, dt) {
+            if (!c.sqAxisW) { c.sqAxisW = new THREE.Vector3(0, 1, 0); c.sq = 1; c.sqV = 0; }
+            // Bouncy spring back to round (low damping → jiggle).
+            const stiff = 200.0, damp = 8.5;
+            c.sqV += ((1.0 - c.sq) * stiff - c.sqV * damp) * dt;
+            c.sq += c.sqV * dt;
+            c.sq = Math.max(0.5, Math.min(1.45, c.sq));
+            // World contact axis → the body's LOCAL space (undo its Y spin only).
+            const yaw = c.body.rotation.y, cs = Math.cos(-yaw), sn = Math.sin(-yaw);
+            _jn.set(c.sqAxisW.x * cs - c.sqAxisW.z * sn, c.sqAxisW.y, c.sqAxisW.x * sn + c.sqAxisW.z * cs);
+            if (_jn.lengthSq() < 1e-6) _jn.set(0, 1, 0);
+            const bu = c.body.material.uniforms;
+            bu.u_squashN.value.copy(_jn); bu.u_squash.value = c.sq;
+            if (c.hoverOutline) { const ou = c.hoverOutline.material.uniforms; ou.u_squashN.value.copy(_jn); ou.u_squash.value = c.sq; }
+            c.group.scale.set(1, 1, 1);   // deformation lives in the vertex shader now
+        }
+
+        // --- 8. Creature update ---
+        function updateCreature(c, dt, time) {
+            // Emoticon faces pulse on the beat
+            if (reactive.beat) {
+                c.face.scale.set(1.3, 1.3, 1);
+            }
+            c.face.scale.x += (1.0 - c.face.scale.x) * 0.15;
+            c.face.scale.y += (1.0 - c.face.scale.y) * 0.15;
+
+            if (c.blushTimer > 0) c.blushTimer -= dt;
+
+            // --- Choreographed dance: follow a formation, bounce to the tempo ---
+            if (c.dancing && !c.isDragged) {
+                // Ease INTO the routine (0→1 over ~1.5s) so joining looks like a
+                // choice, not a snap.
+                c.joinT = Math.min(1, (c.joinT || 0) + dt * 0.7);
+                const jt = c.joinT * c.joinT * (3.0 - 2.0 * c.joinT);   // smoothstep
+                const bp = reactive.active ? reactive.beatPhase : (time * 1.6) % 1;
+                const i = c.danceIndex, n = c.danceCount;
+                const bounce = Math.abs(Math.sin((bp + i / n) * Math.PI)) * 7.0 * c.bounceMul * jt;
+                let tx, tz, splotchR = c.radius, waggling = false;
+                if (danceFormation === 'follow') {
+                    // LOOSE FOLLOW: chain after the friend ahead with lots of slack,
+                    // so the group snakes and spreads instead of locking to a shape.
+                    if (i === 0) {
+                        tx = danceCenter.x + Math.cos(time * 0.33 + c.pathSeed) * (26 + n);
+                        tz = danceCenter.z + Math.sin(time * 0.47 + c.pathSeed * 1.3) * (20 + n);
+                    } else {
+                        const lead = danceParticipants[i - 1];
+                        const lp = lead ? lead.group.position : danceCenter;
+                        tx = lp.x; tz = lp.z;
+                    }
+                    splotchR = c.radius;
+                } else if (danceFormation === 'branch') {
+                    // BRANCH OFF: followers peel to alternating sides of the leader,
+                    // forming two loose arms that drift apart and back.
+                    const lead = danceParticipants[i - 1];
+                    const lp = (i === 0 || !lead) ? danceCenter : lead.group.position;
+                    const side = (i % 2 === 0) ? 1 : -1;
+                    const spread = 5 + 3 * Math.sin(time * 0.4 + i);
+                    tx = lp.x + side * spread + (i === 0 ? Math.cos(time * 0.3 + c.pathSeed) * 22 : 0);
+                    tz = lp.z - 4 + (i === 0 ? Math.sin(time * 0.4 + c.pathSeed) * 18 : 0);
+                    splotchR = c.radius;
+                } else if (danceFormation === 'waggle') {
+                    // BEE WAGGLE (rare): figure-8 lemniscate through a sync point.
+                    const A = 11 + n * 0.8;
+                    const wt = time * 1.5 + i * (Math.PI * 2 / Math.max(1, n));
+                    tx = danceCenter.x + Math.sin(wt) * A;
+                    tz = danceCenter.z + Math.sin(wt * 2.0) * A * 0.55;
+                    waggling = true;
+                    if (Math.hypot(tx - danceCenter.x, tz - danceCenter.z) < 4.5) splotchR = c.radius * 1.6;
+                } else if (danceFormation === 'line') {
+                    const s = time * 0.55, delay = i * 0.5, R = 18 + n * 0.8;
+                    tx = danceCenter.x + Math.cos(s - delay) * R;
+                    tz = danceCenter.z + Math.sin((s - delay) * 1.3) * R;
+                    splotchR = c.radius;
+                } else if (danceFormation === 'circle') {
+                    const R = 9 + n * 1.6;
+                    const ang = time * 0.5 + (i / n) * Math.PI * 2;
+                    tx = danceCenter.x + Math.cos(ang) * R;
+                    tz = danceCenter.z + Math.sin(ang) * R;
+                } else {
+                    tx = danceCenter.x + (i - (n - 1) / 2) * 7.5;
+                    tz = danceCenter.z + Math.sin(time * 1.2 + i * 0.7) * 6.0;
+                }
+                // Per-creature wobble so nobody traces a PERFECT circle/line.
+                tx += Math.sin(time * 1.7 + c.pathSeed) * 3.4 + Math.sin(time * 0.6 + c.pathSeed * 2.3) * 2.0;
+                tz += Math.cos(time * 1.3 + c.pathSeed * 1.4) * 3.4 + Math.cos(time * 0.5 + c.pathSeed) * 2.0;
+                // Eased glide toward target — scaled by joinT (slow drift in, then
+                // committed) and this friend's personal speed.
+                const k = 1.0 - Math.exp(-dt * (waggling ? 3.2 : 1.7) * c.speedMul * (0.3 + 0.7 * jt));
+                c.group.position.x += (tx - c.group.position.x) * k;
+                c.group.position.z += (tz - c.group.position.z) * k;
+                c.group.position.y = c.radius + bounce;
+                c.body.rotation.y += dt * (waggling ? 6.0 : 2.0);
+                if (jt > 0.4) paintTrail(c.group.position.x, c.group.position.z, splotchR, c.colorCss, c.footprint, c.heading);
+                // Squish against the floor at the bottom of each hop (jello).
+                if (bounce < 0.5 && !c._wasDown) { jelloHit(c, 0, 1, 0, 0.26 + 0.1 * c.bounceMul); c._wasDown = true; }
+                if (bounce > 1.3) c._wasDown = false;
+                applyJello(c, dt);
+                orientFace(c, dt);
+                updateFaceExpression(c);
+                return;
+            }
+
+            if (!c.isDragged) {
+                // Beat impulse — crazy bounce, harder when louder.
+                if (reactive.beat) {
+                    const power = 22 + reactive.level * 90;
+                    c.velocity.y += power * (0.6 + Math.random() * 0.7);
+                    const ang = Math.random() * Math.PI * 2;
+                    const h = 12 + reactive.level * 80;
+                    c.velocity.x += Math.cos(ang) * h;
+                    c.velocity.z += Math.sin(ang) * h;
+                    jelloHit(c, 0, 1, 0, 0.24);
+                    if (c.velocity.length() > maxVelocity) c.velocity.setLength(maxVelocity);
+                    paintTrail(c.group.position.x, c.group.position.z, c.radius, c.colorCss, c.footprint, c.heading);
+                    spawnParticles(c.group.position, c.velocity, c.color, c.colorCss);
+                }
+
+                if (c.hyperTimer > 0) c.hyperTimer -= dt;
+                c.velocity.y += gravity * dt;
+                c.group.position.addScaledVector(c.velocity, dt);
+
+                const bounds = (arenaSize / 2) - c.radius;
+                if (Math.abs(c.group.position.x) > bounds) { c.group.position.x = Math.sign(c.group.position.x) * bounds; c.velocity.x *= -bounceFactor; jelloHit(c, Math.sign(c.group.position.x), 0, 0, 0.3); }
+                if (Math.abs(c.group.position.z) > bounds) { c.group.position.z = Math.sign(c.group.position.z) * bounds; c.velocity.z *= -bounceFactor; jelloHit(c, 0, 0, Math.sign(c.group.position.z), 0.3); }
+
+                // Gentle idle spin (no more rigid tumbling); relax any leftover tilt.
+                c.body.rotation.y += dt * 0.6;
+                c.body.rotation.x *= (1 - Math.min(1, dt * 4)); c.body.rotation.z *= (1 - Math.min(1, dt * 4));
+
+                if (c.group.position.y <= floorY + c.radius) {
+                    c.group.position.y = floorY + c.radius;
+                    const impact = Math.min(0.46, 0.1 + Math.abs(c.velocity.y) * 0.012);
+                    if (Math.abs(c.velocity.y) > 8.0 || c.velocity.lengthSq() > 20.0) {
+                        paintTrail(c.group.position.x, c.group.position.z, c.radius, c.colorCss, c.footprint, c.heading);
+                        spawnParticles(c.group.position, c.velocity, c.color, c.colorCss);
+                    }
+                    jelloHit(c, 0, 1, 0, impact);   // flatten against the floor
+                    c.velocity.y *= -bounceFactor;
+                    c.velocity.x *= friction; c.velocity.z *= friction;
+                    if (Math.abs(c.velocity.y) < 1.0) { c.velocity.y = 0; c.velocity.x *= 0.55; c.velocity.z *= 0.55; }
+                    if (c.velocity.lengthSq() < 2.0) {
+                        c.idleTimer -= dt * (1.0 + reactive.level * 3.0);
+                        if (c.idleTimer <= 0) {
+                            // Sometimes a friend catches a case of the zoomies and
+                            // hops fast, high and often for a short burst.
+                            const hyper = (c.hyperTimer || 0) > 0;
+                            if (!hyper && Math.random() < 0.14) c.hyperTimer = 1.4 + Math.random() * 2.4;
+                            let angle, speed = ((hyper ? 20 : 10) + Math.random() * 15) * c.speedMul;
+                            if (gatherActive && !c.dancing) {
+                                // Hop toward the boombox (mill around once close).
+                                const dx = boombox.group.position.x - c.group.position.x;
+                                const dz = boombox.group.position.z - c.group.position.z;
+                                const d = Math.hypot(dx, dz);
+                                if (d > 15) angle = Math.atan2(dz, dx) + (Math.random() - 0.5) * 0.7;
+                                else { angle = Math.random() * Math.PI * 2; speed = Math.random() * 8 + 4; }
+                            } else {
+                                angle = Math.random() * Math.PI * 2;
+                            }
+                            const vy = (hyper ? (34 + Math.random() * 22) : (20 + Math.random() * 15)) * c.bounceMul;
+                            c.velocity.set(Math.cos(angle) * speed, vy, Math.sin(angle) * speed);
+                            c.idleTimer = hyper ? (0.12 + Math.random() * 0.22) : (Math.random() * 1.5 + 0.5);
+                        }
+                    }
+                }
+
+            } else {
+                c.idleTimer = 1.5;
+                c.sq = 1; c.sqV = 0;            // relax jello while held
+            }
+            applyJello(c, dt);                 // spring the soft-body squash + feed shader
+            orientFace(c, dt);
+            updateFaceExpression(c);
+        }
+
+        // --- 9. Animation loop ---
+        const clock = new THREE.Clock();
+        const reactive = new AudioReactive();
+        const _musicColor = new THREE.Color();
+        const MOVE_SPEED = 68;
+
+        // EarthBound-style layer swap state.
+        let paintPhase = 0;
+        let layerPrev = 0, layerCur = 1, layerSwapTime = 0, layerTimer = 5;
+
+        // --- Director Mode: audio-paced cinematic camera cuts ---
+        const SHOT_TYPES = ['fisheyeFollow', 'closeFisheyeLock', 'pivotFisheye', 'subjectPOV', 'chaseCam', 'swoop', 'orbit', 'groundDolly', 'craneUp', 'lowSweep', 'subjectLockZoom'];
+        let dirShot = null, dirShotStart = 0, dirShotDur = 5, dirCutHeld = 0, dirCut = false;
+        const _dirCentroid = new THREE.Vector3();
+        const _dirP = new THREE.Vector3(), _dirL = new THREE.Vector3(), _dirTmp = new THREE.Vector3(), _dirTmp2 = new THREE.Vector3();
+        const _dirLookSmooth = new THREE.Vector3(0, 4, 0);
+        // Handheld-camera state: a slow random-walk drift (springs toward new
+        // random targets) + faint tremor — reads like a real operator's imperfect
+        // hold, not a magnetic sine wobble.
+        const _shk = { px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, gx: 0, gy: 0, gz: 0, t: 0 };
+        const easeIO = (t) => t * t * (3.0 - 2.0 * t);
+
+        function crowdCentroid(out) {
+            let x = 0, z = 0, densest = null, best = 1e9;
+            for (const c of creatures) { x += c.group.position.x; z += c.group.position.z; }
+            const n = creatures.length || 1;
+            out.set(x / n, 4, z / n);
+            // "densest area" = creature with the most neighbours near it
+            let bestCount = -1;
+            for (const c of creatures) {
+                let cnt = 0;
+                for (const o of creatures) if (o !== c && o.group.position.distanceTo(c.group.position) < 22) cnt++;
+                if (cnt > bestCount) { bestCount = cnt; densest = c; }
+            }
+            return densest;
+        }
+
+        function dirPickShot(time) {
+            const dense = crowdCentroid(_dirCentroid);
+            let t; do { t = SHOT_TYPES[Math.floor(Math.random() * SHOT_TYPES.length)]; } while (dirShot && t === dirShot.type && SHOT_TYPES.length > 1);
+            // Pacing rides the audio: louder → snappier cuts.
+            const energy = reactive.active ? Math.min(1, reactive.level * 2.2 + reactive.beatPulse * 0.3) : 0.25;
+            dirShotDur = 8.0 - energy * 4.0;           // ~4s loud … 8s calm (fewer cuts)
+            dirShotStart = time;
+            dirCut = true;                             // next frame snaps to the new pose (a CUT)
+            // Every shot is anchored to a live creature subject (dense cluster or a
+            // random friend), so the camera is ALWAYS following someone.
+            const subjectShots = ['fisheyeFollow', 'closeFisheyeLock', 'pivotFisheye', 'subjectPOV', 'chaseCam', 'subjectLockZoom'];
+            const subj = (subjectShots.includes(t) || !dense)
+                ? (creatures[Math.floor(Math.random() * creatures.length)] || dense)
+                : dense;
+            dirShot = { type: t, subj, a0: Math.random() * Math.PI * 2, center: _dirCentroid.clone() };
+            // pivotFisheye parks the camera at a fixed spot near the crowd and only
+            // rotates to track its subject — pick that pivot once, at cut time.
+            if (t === 'pivotFisheye') {
+                const fp = (subj ? subj.group.position : _dirCentroid);
+                dirShot.pivot = new THREE.Vector3(
+                    fp.x + Math.cos(dirShot.a0) * 14,
+                    3.0 + Math.random() * 3.0,
+                    fp.z + Math.sin(dirShot.a0) * 14);
+            }
+        }
+
+        function directorUpdate(time, dt) {
+            if (!dirShot || (time - dirShotStart) > dirShotDur) dirPickShot(time);
+            // Cut on a strong beat only once the shot has really breathed (fewer,
+            // softer cuts).
+            if (reactive.beat && reactive.beatPulse > 0.96 && reactive.level > 0.16 && (time - dirShotStart) > 2.4) dirPickShot(time);
+
+            const s = dirShot;
+            const p = time - dirShotStart;
+            const t01 = Math.min(1, p / dirShotDur);
+            // Always keep a LIVE subject — re-pick if the old one despawned.
+            let subjAlive = s.subj && creatures.indexOf(s.subj) !== -1;
+            if (!subjAlive && creatures.length) { s.subj = creatures[Math.floor(Math.random() * creatures.length)]; subjAlive = true; }
+            const focus = subjAlive ? s.subj.group.position : s.center;
+            const C = s.center;
+            let fov = 58;
+
+            if (s.type === 'fisheyeFollow') {
+                const ang = s.a0 + p * 0.7;
+                _dirP.set(focus.x + Math.cos(ang) * 6.5, focus.y + 2.5 + Math.sin(p * 1.6) * 1.2, focus.z + Math.sin(ang) * 6.5);
+                _dirL.copy(focus).y += 0.8;
+                fov = 108;                              // wide → fisheye feel, anchored to the friend
+            } else if (s.type === 'closeFisheyeLock') {
+                // INTIMATE: hugging the friend, inches away, ultra-wide lens.
+                // Slow drift around it so its face distorts across the bulge.
+                const ang = s.a0 + p * 0.35;
+                _dirP.set(focus.x + Math.cos(ang) * 3.4,
+                          focus.y + 1.2 + Math.sin(p * 1.1) * 0.5,
+                          focus.z + Math.sin(ang) * 3.4);
+                _dirL.copy(focus).y += 0.6;
+                fov = 130;                              // extreme fisheye, nose-to-nose
+            } else if (s.type === 'pivotFisheye') {
+                // STATIC fisheye on a tripod: parked low near the crowd, only
+                // panning/rotating in place to keep its subject centred.
+                _dirP.copy(s.pivot);
+                _dirL.copy(focus).y += 0.8;
+                fov = 120;
+            } else if (s.type === 'swoop') {
+                const dx = Math.cos(s.a0), dz = Math.sin(s.a0);
+                _dirP.set(C.x + dx * 72, 46 - easeIO(t01) * 26, C.z + dz * 72).addScaledVector(_dirTmp.set(-dx, 0, -dz), easeIO(t01) * 120);
+                _dirL.copy(C);
+                fov = 62;
+            } else if (s.type === 'orbit') {
+                const ang = s.a0 + p * 0.4;
+                _dirP.set(C.x + Math.cos(ang) * 46, 20, C.z + Math.sin(ang) * 46);
+                _dirL.copy(C);
+                fov = 55;
+            } else if (s.type === 'groundDolly') {
+                const dx = Math.cos(s.a0), dz = Math.sin(s.a0);
+                _dirP.set(C.x + dx * 38, 3.2, C.z + dz * 38).addScaledVector(_dirTmp.set(-dz, 0, dx), (t01 - 0.5) * 70);
+                _dirL.copy(C); _dirL.y = 4.5;
+                fov = 52;
+            } else if (s.type === 'craneUp') {
+                _dirP.set(C.x + Math.cos(s.a0) * 30, 4 + easeIO(t01) * 58, C.z + Math.sin(s.a0) * 30);
+                _dirL.copy(C);
+                fov = 60;
+            } else if (s.type === 'lowSweep') {
+                // Low altitude, sweeping laterally across the crowd while zooming in.
+                const dx = Math.cos(s.a0), dz = Math.sin(s.a0);
+                _dirP.set(C.x + dx * 30, 5, C.z + dz * 30).addScaledVector(_dirTmp.set(-dz, 0, dx), (t01 - 0.5) * 95);
+                _dirL.copy(C); _dirL.y = 5;
+                fov = 72 - easeIO(t01) * 30;             // 72 → 42 zoom-in
+            } else if (s.type === 'longZoomIn') {
+                // Far-off telephoto that slowly zooms in (compressed long shot).
+                _dirP.set(C.x + Math.cos(s.a0) * 150, 40, C.z + Math.sin(s.a0) * 150);
+                _dirL.copy(C);
+                fov = 48 - easeIO(t01) * 28;             // 48 → 20 long zoom-in
+            } else if (s.type === 'subjectLockZoom') {
+                // Locked on one friend, tracking its movement, zooming in on it.
+                _dirP.set(focus.x + Math.cos(s.a0) * 42, focus.y + 15, focus.z + Math.sin(s.a0) * 42);
+                _dirL.copy(focus);
+                fov = 42 - easeIO(t01) * 20;             // 42 → 22 zoom-in on subject
+            } else if (s.type === 'subjectPOV') {
+                // FIRST-PERSON: ride ON the friend, looking where it's headed.
+                const v = subjAlive ? s.subj.velocity : _dirTmp.set(1, 0, 0);
+                let vx = v.x, vz = v.z; const vl = Math.hypot(vx, vz) || 1; vx /= vl; vz /= vl;
+                _dirP.set(focus.x - vx * 0.6, focus.y + 1.5, focus.z - vz * 0.6);
+                _dirL.set(focus.x + vx * 6.0, focus.y + 1.1, focus.z + vz * 6.0);
+                fov = 100;
+            } else if (s.type === 'chaseCam') {
+                // OVER-THE-SHOULDER chase, just behind the friend.
+                const v = subjAlive ? s.subj.velocity : _dirTmp.set(1, 0, 0);
+                let vx = v.x, vz = v.z; const vl = Math.hypot(vx, vz) || 1; vx /= vl; vz /= vl;
+                _dirP.set(focus.x - vx * 9.0, focus.y + 4.5, focus.z - vz * 9.0);
+                _dirL.copy(focus).y += 1.2;
+                fov = 74;
+            } else { // topPush
+                _dirP.set(C.x + 3, 92 - easeIO(t01) * 55, C.z + 3);
+                _dirL.copy(C);
+                fov = 56;
+            }
+
+            // CHANGE SHOTS BY CUTTING: the camera rides its shot's own (smooth)
+            // path exactly; a new shot jumps the pose instantly = a hard cut.
+            camPos.copy(_dirP);
+            _dirLookSmooth.copy(_dirL);
+            if (dirCut) { camera.fov = fov; dirCut = false; }
+            else camera.fov += (fov - camera.fov) * Math.min(1, dt * 9.0);   // intra-shot zooms only
+
+            // Handheld shake: spring the offset toward drifting random targets +
+            // a little tremor. Amplitude rides the audio.
+            const amp = 0.22 + reactive.level * 1.0 + reactive.beatPulse * 0.5;
+            _shk.t -= dt;
+            if (_shk.t <= 0) { _shk.t = 0.20 + Math.random() * 0.5; _shk.gx = (Math.random() - 0.5) * 2; _shk.gy = (Math.random() - 0.5) * 2; _shk.gz = (Math.random() - 0.5) * 2; }
+            const sK = 9.0, sD = 3.4;
+            _shk.vx += ((_shk.gx - _shk.px) * sK - _shk.vx * sD) * dt; _shk.px += _shk.vx * dt;
+            _shk.vy += ((_shk.gy - _shk.py) * sK - _shk.vy * sD) * dt; _shk.py += _shk.vy * dt;
+            _shk.vz += ((_shk.gz - _shk.pz) * sK - _shk.vz * sD) * dt; _shk.pz += _shk.vz * dt;
+            const trem = Math.sin(time * 36.0) * 0.12 + Math.sin(time * 22.7) * 0.08;
+            camera.position.set(
+                camPos.x + (_shk.px + trem) * amp,
+                camPos.y + _shk.py * amp,
+                camPos.z + (_shk.pz - trem * 0.6) * amp);
+            camFov = camera.fov; camera.updateProjectionMatrix();
+            _dirTmp2.copy(_dirLookSmooth);
+            _dirTmp2.x += _shk.py * amp * 0.25; _dirTmp2.y += _shk.px * amp * 0.18;
+            camera.lookAt(_dirTmp2);
+            // Keep manual state in sync so exiting Director Mode resumes smoothly.
+            _dirTmp.subVectors(_dirLookSmooth, camPos).normalize();
+            camYaw = Math.atan2(_dirTmp.x, _dirTmp.z);
+            camPitch = Math.asin(Math.max(-1, Math.min(1, _dirTmp.y)));
+        }
+
+        function setDirectorMode(on) {
+            directorMode = on;
+            const lbl = document.querySelector('#director-btn .pf-label');
+            if (lbl) lbl.textContent = on ? 'Director ● ON' : 'Director Mode';
+            if (on) {
+                if (pointerLocked) { try { document.exitPointerLock(); } catch (_) {} }
+                dirShot = null;                         // fresh shot on next frame
+                crowdCentroid(_dirLookSmooth);          // seed the smoothed look target
+            } else {
+                camera.fov = camFov; camera.updateProjectionMatrix();
+            }
+        }
+        document.getElementById('director-btn').addEventListener('click', () => setDirectorMode(!directorMode));
+
+        // Camera follows the clicked subject: keeps your current angle/distance,
+        // just glides to keep the friend framed (iso pans its target instead).
+        const _fsOff = new THREE.Vector3(), _fsDir = new THREE.Vector3();
+        function followSubject_update(dt) {
+            const sp = followSubject.group.position;
+            const k = 1 - Math.exp(-dt * 3.0);
+            if (viewMode === 'iso') {
+                isoTarget.lerp(sp, k); updateIsoCam();
+            } else {
+                _fsOff.copy(camPos).sub(sp);                       // subject → camera
+                const dist = Math.max(26, Math.min(90, _fsOff.length()));
+                _fsDir.copy(_fsOff).setLength(dist);
+                _fsOff.copy(sp).add(_fsDir);                       // desired camera position
+                camPos.lerp(_fsOff, k);
+                _fsDir.copy(sp).sub(camPos).normalize();           // aim at subject
+                camYaw = Math.atan2(_fsDir.x, _fsDir.z);
+                camPitch = Math.max(-1.4, Math.min(1.4, Math.asin(Math.max(-1, Math.min(1, _fsDir.y)))));
+                updateCamera();
+            }
+        }
+
+        function flyCamera(dt) {
+            const boost = keys['shift'] ? 2.0 : 1.0;
+            const step = MOVE_SPEED * dt * boost;
+            lookVectors();
+            let mv = 0;
+            if (keys['w']) { camPos.addScaledVector(_fwd, step); mv = 1; }
+            if (keys['s']) { camPos.addScaledVector(_fwd, -step); mv = 1; }
+            if (keys['d']) { camPos.addScaledVector(_right, step); mv = 1; }
+            if (keys['a']) { camPos.addScaledVector(_right, -step); mv = 1; }
+            if (keys[' ']) camPos.y += step;
+            if (keys['shift']) camPos.y -= step * 0.5;
+            camPos.y = Math.max(4, Math.min(220, camPos.y));
+            camPos.x = Math.max(-320, Math.min(320, camPos.x));
+            camPos.z = Math.max(-320, Math.min(320, camPos.z));
+            updateCamera();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.05);
+            const time = clock.getElapsedTime();
+            const now = time; // seconds
+
+            reactive.update(dt);
+
+            // Flat creatures + world surfaces follow the fixed fake light; the
+            // tint cools at night (driven by the sky background's night variant).
+            creatureUniforms.u_lightDir.value.copy(_lightDir);
+            creatureUniforms.u_lightColor.value.setRGB(nightMode ? 0.62 : 1.0, nightMode ? 0.68 : 1.0, nightMode ? 0.98 : 0.98);
+            creatureUniforms.u_lightColor.value.multiply(weatherLight);   // weather tints the light
+            splotchMat.uniforms.u_time.value = time;
+            if (trailDirty) { trailTex.needsUpdate = true; trailDirty = false; }   // one upload/frame
+
+            // Sky ripples + hue-shifts over time; celestial disc = sun by day,
+            // moon at night; both follow the ACTIVE camera.
+            skyMat.uniforms.u_time.value = time;
+            const cam = curCam();
+            // Van-Gogh clouds drift + swirl; hidden in battle / heavy fog.
+            cloudMat.uniforms.u_time.value = time;
+            cloudGroup.visible = weatherCloudsOn && !battleBG;
+            if (cloudGroup.visible) cloudGroup.children.forEach(cl => { cl.position.x += cl.userData.drift * dt; if (cl.position.x > 190) cl.position.x = -190; });
+            updatePrecip(dt, cam.position);
+            skyDome.position.copy(cam.position);
+            celestial.material.color.set(nightMode ? '#e2e8ff' : '#fff3c0');
+            celestial.position.copy(cam.position).addScaledVector(_lightDir, 500);
+            celestial.lookAt(cam.position);
+
+            // Boombox bounces to the beat + puffs sound rings.
+            updateBoombox(dt, time);
+            updateLasso(dt);
+            updateFloat(dt, time);                       // radio floating into the dock
+            // Dock membrane: animate + decay the punch-through ripple.
+            dockSphereMat.uniforms.u_time.value = time;
+            dockSphereMat.uniforms.u_pulse.value *= Math.exp(-dt * 3.0);
+            if (boombox.docked) {
+                boomGroup.position.lerp(_ORIGIN, 1 - Math.exp(-dt * 2.5));   // slowly centre in the sphere
+                if (window.radio && window.radio.playing) {                  // pixel music notes puff out
+                    _noteT -= dt; if (_noteT <= 0) { _noteT = 0.26 + Math.random() * 0.3; spawnBubbleNote(); }
+                }
+            }
+            // Blobs periodically gather around the boombox, then disperse.
+            gatherTimer -= dt;
+            if (gatherTimer <= 0) { gatherActive = !gatherActive; gatherTimer = gatherActive ? (10 + Math.random() * 8) : (16 + Math.random() * 16); }
+            if (_npTimer > 0) { _npTimer -= dt; if (_npTimer <= 0) { const el = document.getElementById('now-playing'); if (el) el.classList.remove('show'); } }
+
+            // Pulsing pastel-yellow silhouette halo on the creature under the cursor.
+            if (hoveredCreature) {
+                if (creatures.indexOf(hoveredCreature) === -1) { hoveredCreature = null; }
+                else if (hoveredCreature.hoverOutline) {
+                    const u = hoveredCreature.hoverOutline.material.uniforms;
+                    u.u_ow.value = 0.5 + 0.16 * Math.sin(time * 8.0);      // breathing thickness
+                    u.u_pulse.value = 0.85 + 0.15 * Math.sin(time * 8.0);
+                }
+            }
+            // While the radio floats into the dock the whole world FREEZES.
+            if (!dockFreeze) {
+            // Camera: Director › follow-subject › manual.
+            if (followSubject && creatures.indexOf(followSubject) === -1) followSubject = null;
+            if (directorMode) directorUpdate(time, dt);
+            else if (followSubject) followSubject_update(dt);
+            else if (viewMode === 'free') flyCamera(dt);
+            updateDance(now, dt);
+            creatures.forEach(c => updateCreature(c, dt, time));
+
+            // Creature-vs-creature collisions.
+            for (let i = 0; i < creatures.length; i++) {
+                for (let j = i + 1; j < creatures.length; j++) {
+                    const c1 = creatures[i], c2 = creatures[j];
+                    if (c1.dancing && c2.dancing) continue;
+                    const dist = c1.group.position.distanceTo(c2.group.position);
+                    const minDist = c1.radius + c2.radius;
+                    // Touching an active dancer recruits the other blob into the dance.
+                    if ((c1.dancing || c2.dancing) && dist < minDist + 1.5) { danceTryRecruit(c1, c2, now); continue; }
+                    if (dist < minDist) {
+                        const dir = new THREE.Vector3().subVectors(c1.group.position, c2.group.position).normalize();
+                        const overlap = minDist - dist;
+                        c1.group.position.addScaledVector(dir, overlap * 0.5);
+                        c2.group.position.addScaledVector(dir, -overlap * 0.5);
+                        const relVel = new THREE.Vector3().subVectors(c1.velocity, c2.velocity);
+                        const impulse = dir.clone().multiplyScalar(relVel.dot(dir) * 0.8);
+                        c1.velocity.sub(impulse); c2.velocity.add(impulse);
+                        // Jello: each squishes on the side that hit the other.
+                        const amt = Math.min(0.4, 0.14 + Math.abs(relVel.dot(dir)) * 0.01);
+                        jelloHit(c1, dir.x, dir.y, dir.z, amt);
+                        jelloHit(c2, -dir.x, -dir.y, -dir.z, amt);
+                        c1.blushTimer = 2.5; c2.blushTimer = 2.5;
+                    }
+                }
+            }
+
+            // Voxel splotches — arc, then settle on the ground and linger.
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                if (p.position.y > floorY + 0.45) {
+                    p.velocity.y += gravity * dt; p.position.addScaledVector(p.velocity, dt);
+                    p.rotation.x += dt * 5; p.rotation.y += dt * 5;
+                    p._trailT += dt;
+                    if (p._trailT > 0.03) { p._trailT = 0; paintTrail(p.position.x, p.position.z, 0.7, p._trailCss); }
+                } else {
+                    p.position.y = floorY + 0.4; p.velocity.set(0, 0, 0);
+                    p.life -= dt * 0.55;                      // linger as a coloured voxel pile
+                    p.scale.setScalar(Math.max(0.2, p.life));
+                }
+                if (p.life <= 0) { scene.remove(p); particles.splice(i, 1); }
+            }
+            } // end !dockFreeze
+
+            battleMat.uniforms.u_time.value = time;
+            battleMat.uniforms.u_hue.value = paletteBaseHue();
+            battleMat.uniforms.u_spectrum.value = (activePaletteName === 'Full Spectrum') ? 1.0 : 0.0;
+            renderer.clear();
+            if (battleBG) renderer.render(bgScene, bgCam);
+            renderer.render(scene, cam);
+
+            // The dock ORB: always render the low-res membrane sphere into the
+            // bubble's screen rect (with the frozen radio inside once docked).
+            {
+                const rr = bubbleEl.getBoundingClientRect();
+                const bw = renderer.domElement.width, bh = renderer.domElement.height;
+                const sx = bw / window.innerWidth, sy = bh / window.innerHeight;
+                const vx = (rr.left + 4) * sx;
+                const vw = (rr.width - 8) * sx;
+                const vh = (rr.height - 22) * sy;          // leave room for the hint
+                const vy = bh - (rr.top + 4) * sy - vh;    // flip Y (GL origin bottom-left)
+                if (vw > 4 && vh > 4) {
+                    renderer.setScissorTest(true);
+                    renderer.setScissor(vx, vy, vw, vh);
+                    renderer.setViewport(vx, vy, vw, vh);
+                    renderer.clearDepth();                 // keep the world behind → sphere floats over it
+                    dockCam.aspect = vw / vh; dockCam.updateProjectionMatrix();
+                    renderer.render(dockScene, dockCam);
+                    renderer.setScissorTest(false);
+                    renderer.setViewport(0, 0, bw, bh);
+                }
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = aspect;
+            camera.updateProjectionMatrix();
+            applyIsoFrustum();
+            renderer.setSize(curRenderH * aspect, curRenderH, false);
+        });
+
+        animate();
+    </script>
+
+    <script>
+        // --- 10. UI chrome, windowed radio, boot ---
+        (function bootUI() {
+            // Early-OS boxes: white fill inside a thick BLACK rounded pixel
+            // border (classic Macintosh button silhouette). No gloss/smudge/
+            // canvas shadow — CSS supplies the solid offset shadow.
+            const osBox = { fill: '#ffffff', fillHi: '#ffffff', fillLo: '#ffffff',
+                            outline: '#111111', frame: '#111111', frameHi: '#111111', frameLo: '#111111',
+                            noGloss: true, noSmudge: true, noShadow: true };
+            // CRT terminal panel: near-black phosphor screen in the same black frame.
+            const termBox = { ...osBox, fill: '#0a0f0a', fillHi: '#0a0f0a', fillLo: '#0a0f0a' };
+
+            // --- Drum-chopper (EarthBound text-box) button styling --------------
+            // pixel-frame.js was ported from drum-chopper's app.py; its DEFAULT
+            // colours ARE the drum-chopper look (pink bevelled frame + dark purple
+            // interior + gloss/smudge/shadow). So: no osBox overrides here — and
+            // the frame hue re-tints live to complement the selected palette.
+            const styledButtons = [];
+            ['menu-btn', 'view-btn', 'palette-btn', 'bg-btn', 'weather-btn', 'director-btn', 'clear-btn'].forEach(id => {
+                const el = document.getElementById(id);
+                styledButtons.push({ el, pb: new PixelButton(el, { r: 10, border: 4 }) });
+            });
+            {
+                const el = document.getElementById('radio-reopen');
+                styledButtons.push({ el, pb: new PixelButton(el, { r: 8, border: 3 }) });
+            }
+
+            // Each control is its OWN distinct MUTED colour (drum-chopper pill with
+            // gloss + drop shadow, but soft/desaturated). The whole set rotates
+            // toward the active palette so it still harmonises with the world.
+            const BTN_HUE = { 'menu-btn': 0.47, 'spawn-btn': 0.33, 'palette-btn': 0.95,
+                              'bg-btn': 0.58, 'weather-btn': 0.52, 'view-btn': 0.72, 'director-btn': 0.11,
+                              'clear-btn': 0.02, 'radio-reopen': 0.47 };
+            function mutedStyle(h) {
+                const c = (s, l) => '#' + new THREE.Color().setHSL((h % 1 + 1) % 1, s, l).getHexString();
+                return {
+                    frame:   c(0.30, 0.50),   // muted coloured border (auto-bevels)
+                    fill:    c(0.22, 0.80),   // soft desaturated face
+                    fillHi:  c(0.18, 0.88),
+                    fillLo:  c(0.32, 0.64),
+                    outline: c(0.45, 0.16),   // dark rim
+                    shine:   '#ffffff',
+                    ink:     c(0.55, 0.13)    // dark label
+                };
+            }
+            function applyButtonPalette() {
+                const shift = (activePaletteName === 'Full Spectrum') ? 0 : paletteBaseHue() * 0.5;
+                styledButtons.forEach(({ el, pb }) => {
+                    const s = mutedStyle((BTN_HUE[el.id] ?? 0.5) + shift);
+                    pb.restyle({ frame: s.frame, fill: s.fill, fillHi: s.fillHi, fillLo: s.fillLo, outline: s.outline, shine: s.shine });
+                    el.style.color = s.ink;
+                });
+            }
+            applyButtonPalette();
+
+            // View toggle: Free (perspective fly) ↔ Iso (orthographic orbit).
+            document.getElementById('view-btn').addEventListener('click', () => {
+                setViewMode(viewMode === 'iso' ? 'free' : 'iso');
+            });
+            // Background: Sky ↔ Night ↔ Battle.
+            document.getElementById('bg-btn').addEventListener('click', cycleBgMode);
+            // Weather: Clear → Sunset → Ocean → Snow → Rain → Fog.
+            document.getElementById('weather-btn').addEventListener('click', cycleWeather);
+            applyWeather();   // sync label + precip/clouds for the default weather
+            // ☰ Menu drop-up: reveal/hide the panel of controls.
+            const menuPanel = document.getElementById('menu-panel');
+            document.getElementById('menu-btn').addEventListener('click', () => menuPanel.classList.toggle('open'));
+
+            // --- Palette window -------------------------------------------------
+            const palWin = document.getElementById('palette-win');
+            document.getElementById('palette-btn').addEventListener('click', () => {
+                palWin.style.display = palWin.style.display === 'none' ? 'flex' : 'none';
+            });
+            document.getElementById('palette-close').addEventListener('click', () => { palWin.style.display = 'none'; });
+
+            // Preset rows: click a row to activate; click a swatch to EDIT that
+            // colour (presets with a hue set are editable; Full Spectrum shows a
+            // read-only rainbow).
+            const presetsEl = document.getElementById('palette-presets');
+            const SWATCH_HUES = { 'Full Spectrum': [0.0, 0.14, 0.3, 0.5, 0.66, 0.83] };
+            const hueHex = (h) => '#' + new THREE.Color().setHSL((h % 1 + 1) % 1, 0.8, 0.55).getHexString();
+            function buildSwatches(name, container) {
+                container.innerHTML = '';
+                const editable = !!(PALETTES[name] && PALETTES[name].hues);
+                const hues = editable ? PALETTES[name].hues : (SWATCH_HUES[name] || []);
+                hues.forEach((h, i) => {
+                    if (editable) {
+                        const inp = document.createElement('input');
+                        inp.type = 'color'; inp.className = 'pal-swatch-edit'; inp.value = hueHex(h);
+                        inp.title = 'edit this colour';
+                        inp.addEventListener('click', e => e.stopPropagation());
+                        inp.addEventListener('input', e => {
+                            const hsl = { h: 0, s: 0, l: 0 }; new THREE.Color(e.target.value).getHSL(hsl);
+                            PALETTES[name].hues[i] = hsl.h;
+                            if (activePaletteName === name) { applyButtonPalette(); applyPaletteToAll(); }
+                        });
+                        container.appendChild(inp);
+                    } else {
+                        const sw = document.createElement('i'); sw.style.background = hueHex(h);
+                        container.appendChild(sw);
+                    }
+                });
+            }
+            function refreshPresetRows() {
+                presetsEl.querySelectorAll('.pal-preset').forEach(row => {
+                    row.classList.toggle('active', row.dataset.name === activePaletteName);
+                });
+            }
+            Object.keys(PALETTES).forEach(name => {
+                const row = document.createElement('div');
+                row.className = 'pal-preset'; row.dataset.name = name;
+                const label = document.createElement('span'); label.textContent = name;
+                const sw = document.createElement('span'); sw.className = 'pal-swatches';
+                buildSwatches(name, sw);
+                row.appendChild(label); row.appendChild(sw);
+                row.addEventListener('click', () => { activePaletteName = name; refreshPresetRows(); applyButtonPalette(); applyPaletteToAll(); });
+                presetsEl.appendChild(row);
+            });
+            refreshPresetRows();
+
+            // Custom palette: "+" adds another picker; "Use" applies them all.
+            const customRow = palWin.querySelector('.pal-custom-row');
+            const addBtn = document.getElementById('pal-custom-add');
+            if (addBtn) addBtn.addEventListener('click', () => {
+                const inp = document.createElement('input'); inp.type = 'color'; inp.className = 'pal-custom';
+                inp.value = hueHex(Math.random());
+                customRow.insertBefore(inp, document.getElementById('pal-custom-use'));
+            });
+            document.getElementById('pal-custom-use').addEventListener('click', () => {
+                const hsl = { h: 0, s: 0, l: 0 };
+                customHues = [...palWin.querySelectorAll('.pal-custom')].map(inp => {
+                    new THREE.Color(inp.value).getHSL(hsl); return hsl.h;
+                });
+                activePaletteName = 'Custom';
+                refreshPresetRows();               // deselects presets
+                applyButtonPalette();
+                applyPaletteToAll();
+            });
+
+            // The radio lives in the world as the draggable 3D boombox; clicking it
+            // opens this minimalist knobs/dials UI (built here, driven by Radio).
+            window.radio = new Radio(window.audioEngine);
+            const oldWin = document.getElementById('radio-win'); if (oldWin) oldWin.remove();
+            const oldPill = document.getElementById('radio-reopen'); if (oldPill) oldPill.remove();
+
+            const rpanel = document.getElementById('radio-panel');
+            const rpName = document.getElementById('rp-name');
+            const rpStatus = document.getElementById('rp-status');
+            const rpTune = document.getElementById('rp-tune');
+            function stationName() { const r = window.radio, s = r && r.stations[r.stationIdx]; return s ? s.name : '—'; }
+            function updateRadioPanel() {
+                const r = window.radio, on = !!(r && r.playing);
+                rpName.textContent = stationName();
+                rpStatus.textContent = on ? 'ON AIR' : 'OFF AIR';
+                rpTune.textContent = on ? '■ STOP' : '▶ TUNE';
+            }
+            // Exposed on window so the canvas click/tap handlers (other script) can call it.
+            window.openRadioUI = function () { rpanel.style.display = 'flex'; updateRadioPanel(); };
+            const bump = () => { boombox.velocity.y = Math.max(boombox.velocity.y, 18); boombox.squishTimer = 0.12; };
+            document.getElementById('rp-close').addEventListener('click', () => { rpanel.style.display = 'none'; });
+            document.getElementById('rp-prev').addEventListener('click', () => {
+                const r = window.radio; r.stationIdx = (r.stationIdx - 1 + r.stations.length) % r.stations.length;
+                if (r.playing) r.tune(); updateRadioPanel(); showNowPlaying(stationName());
+            });
+            document.getElementById('rp-next').addEventListener('click', () => {
+                const r = window.radio; r.stationIdx = (r.stationIdx + 1) % r.stations.length;
+                if (r.playing) r.tune(); updateRadioPanel(); showNowPlaying(stationName());
+            });
+            rpTune.addEventListener('click', () => {
+                const r = window.radio; if (r.playing) r.stop(); else r.tune();
+                bump(); showNowPlaying(stationName());
+                setTimeout(updateRadioPanel, 150); setTimeout(updateRadioPanel, 900);
+            });
+            document.getElementById('rp-vol').addEventListener('input', (e) => {
+                const v = parseFloat(e.target.value);
+                if (window.audioEngine && window.audioEngine.master) window.audioEngine.master.gain.value = v;
+                if (window.radio && window.radio.audioEl) window.radio.audioEl.volume = v;
+            });
+        })();
+    </script>
+
+    <script>
+        // --- Pixel-art magnet icon + animated bouncing-creature spawn button ---
+        (function () {
+            // Horseshoe magnet drawn pixel-by-pixel → data URL.
+            function magnetDataURL() {
+                const S = 16, c = document.createElement('canvas'); c.width = c.height = S;
+                const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+                const P = (px, py, col) => { x.fillStyle = col; x.fillRect(px, py, 1, 1); };
+                const red = '#d63a2f', silver = '#dce1e8', dark = '#8f241b';
+                for (let y = 4; y <= 13; y++) { for (let dx = 0; dx < 3; dx++) { P(3 + dx, y, red); P(10 + dx, y, red); } }
+                for (let xx = 3; xx <= 12; xx++) { P(xx, 12, red); P(xx, 13, red); }          // bottom bridge
+                for (let dx = 0; dx < 3; dx++) { P(3 + dx, 4, silver); P(3 + dx, 5, silver); P(10 + dx, 4, silver); P(10 + dx, 5, silver); }
+                for (let y = 6; y <= 11; y++) { P(3, y, dark); P(12, y, dark); }              // shading
+                return c.toDataURL();
+            }
+            const lb = document.getElementById('lasso-btn');
+            if (lb) { lb.textContent = ''; lb.style.backgroundImage = 'url(' + magnetDataURL() + ')'; lb.title = 'magnetise the radio into the bubble / eject'; }
+
+            // Rough hand-drawn blob outline: draw a black blob then a colour blob
+            // with a DIFFERENT jitter so the rim thickness varies around it.
+            function blobPath(x, cx, cy, rx, ry, jit, seed) {
+                x.beginPath();
+                const N = 18;
+                for (let i = 0; i <= N; i++) {
+                    const a = i / N * 6.2832;
+                    const j = 1 + Math.sin(a * 3 + seed) * jit + Math.sin(a * 7 + seed * 2.3) * jit * 0.5;
+                    const px = cx + Math.cos(a) * rx * j, py = cy + Math.sin(a) * ry * j;
+                    i ? x.lineTo(px, py) : x.moveTo(px, py);
+                }
+                x.closePath();
+            }
+            function spawnFrameURL(i) {
+                const S = 22, c = document.createElement('canvas'); c.width = c.height = S;
+                const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+                const sq = [[1.0, 1.0, 15], [0.82, 1.24, 10], [1.0, 1.05, 7], [0.86, 1.16, 11], [1.34, 0.72, 16]][i];
+                const cx = 11, cy = sq[2], rx = 5.2 * sq[0], ry = 5.2 * sq[1];
+                x.fillStyle = '#141014'; blobPath(x, cx, cy, rx + 1.6, ry + 1.6, 0.085, i * 1.7); x.fill();
+                x.fillStyle = '#7fd08a'; blobPath(x, cx, cy, rx, ry, 0.06, i * 1.7 + 2.6); x.fill();
+                // face
+                x.fillStyle = '#141014';
+                const ey = Math.round(cy - ry * 0.15);
+                x.fillRect(Math.round(cx - rx * 0.42), ey, 1, 2); x.fillRect(Math.round(cx + rx * 0.42), ey, 1, 2);
+                const my = Math.round(cy + ry * 0.32);
+                if (i === 4) x.fillRect(cx - 1, my, 3, 1);                                     // squished flat mouth
+                else { x.fillRect(cx - 1, my, 1, 1); x.fillRect(cx, my + 1, 1, 1); x.fillRect(cx + 1, my, 1, 1); }  // little smile
+                return c.toDataURL();
+            }
+            const frames = [0, 1, 2, 3, 4].map(spawnFrameURL);
+            const sb = document.getElementById('spawn-btn');
+            if (sb) {
+                let f = 0; sb.style.backgroundImage = 'url(' + frames[0] + ')';
+                setInterval(() => { f = (f + 1) % frames.length; sb.style.backgroundImage = 'url(' + frames[f] + ')'; }, 150);
+            }
+        })();
+    </script>
+</body>
+</html>
