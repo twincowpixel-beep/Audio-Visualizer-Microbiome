@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Isometric Dithered Blob Playground</title>
+    <style>
+        @font-face {
+            font-family: "Saturno";
+            src: url("fonts/saturno.ttf") format("truetype");
+            font-display: swap;
+        }
+
+        :root {
+            /* 1980s terminal / early-OS scheme: 1-bit Macintosh-style windows
+               (white, hard black borders, striped titlebars, solid offset
+               shadows) with green-phosphor CRT accents. */
+            --os-white:   #ffffff;
+            --os-black:   #111111;
+            --os-gray:    #bfbfbf;
+            --term-bg:    #0a0f0a;   /* CRT panel */
+            --term-green: #33ff66;   /* phosphor */
+            --term-dim:   #1d8f44;   /* phosphor on white */
+
+            --eb-fill:     var(--os-white);
+            --eb-fill-2:   #f2f2f2;
+            --eb-fill-lo:  var(--term-bg);
+            --eb-outline:  var(--os-black);
+            --eb-frame:    var(--os-black);
+            --eb-frame-hi: var(--os-black);
+            --eb-frame-lo: var(--os-black);
+            --eb-ink:      var(--os-black);
+            --eb-muted:    #5a5a5a;
+            --green:       var(--term-green);
+
+            /* Solid offset shadow — the early-OS look, not a soft blur. */
+            --box-shadow: drop-shadow(5px 5px 0 var(--os-black));
+
+            --font-pixel: "Saturno", "JetBrains Mono", "Menlo", monospace;
+        }
+
+        html { height: 100%; overflow: hidden; overscroll-behavior: none; }
+        body {
+            margin: 0;
+            position: fixed; inset: 0;                 /* stop iOS rubber-band scroll */
+            overflow: hidden;
+            overscroll-behavior: none;
+            background-color: #ffffff;
+            font-family: var(--font-pixel);
+            letter-spacing: 0.08em;
+            user-select: none; -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        #canvas-container { width: 100vw; height: 100dvh; height: 100vh; cursor: grab; touch-action: none; }
+        #canvas-container:active { cursor: grabbing; }
+        #canvas-container canvas {
+            width: 100vw !important;
+            height: 100vh !important;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        .pf-content { position: relative; z-index: 1; }
+        .pf-label { position: relative; z-index: 1; display: inline-block; pointer-events: none; }
+
+        #ui-overlay {
+            position: absolute;
+            bottom: 20px; right: 20px;
+            z-index: 10;
+            display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
+        }
+        /* Controls readout = a little green-phosphor CRT terminal panel. */
+        #controls-help {
+            padding: 12px 16px;
+            color: var(--term-green);
+            text-shadow: 0 0 4px rgba(51,255,102,0.45);
+            font: 13px var(--font-pixel);
+            letter-spacing: 0.06em;
+            max-width: 360px; text-align: right; line-height: 1.5;
+            filter: var(--box-shadow);
+        }
+        #controls-help > * { position: relative; z-index: 1; }
+        /* Faint CRT scanlines over the terminal panel. */
+        #controls-help::after {
+            content: ""; position: absolute; inset: 4px; z-index: 2; pointer-events: none;
+            background: repeating-linear-gradient(to bottom, rgba(51,255,102,0.06) 0 1px, transparent 1px 3px);
+        }
+
+        .eb-btn {
+            position: relative; background: transparent; border: none;
+            padding: 12px 20px; color: var(--os-black);
+            font: 16px var(--font-pixel); letter-spacing: 0.06em;
+            cursor: pointer; overflow: visible;
+            filter: drop-shadow(4px 4px 0 var(--os-black));
+        }
+        .eb-btn > * { position: relative; z-index: 1; }
+        .eb-btn:hover { filter: drop-shadow(4px 4px 0 var(--os-black)) invert(0.06); }
+        .eb-btn:active { transform: translate(2px, 2px); filter: drop-shadow(2px 2px 0 var(--os-black)); }
+
+        /* ------------ WINDOW CHROME (Windows-style) ----------------- */
+        .win {
+            position: fixed;
+            left: 16px; bottom: 16px;
+            width: 380px;
+            z-index: 30;
+            background: var(--os-white);
+            border: 2px solid var(--os-black);
+            border-radius: 2px;                       /* early-OS: nearly square */
+            box-shadow: 6px 6px 0 var(--os-black);    /* solid offset shadow */
+            display: flex; flex-direction: column;
+            overflow: hidden;
+            min-width: 240px; min-height: 52px;
+        }
+        /* Classic Macintosh striped titlebar; the title sits on a white plate. */
+        .win-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px;
+            background: repeating-linear-gradient(to bottom, var(--os-white) 0 2px, var(--os-black) 2px 3px);
+            background-clip: padding-box;
+            border-bottom: 2px solid var(--os-black);
+            padding: 5px 8px 5px 10px;
+            cursor: grab;
+        }
+        .win.dragging .win-bar { cursor: grabbing; }
+        .win-title {
+            color: var(--os-black); font: 13px var(--font-pixel); letter-spacing: 0.10em;
+            white-space: nowrap; background: var(--os-white); padding: 1px 10px;
+        }
+        .win-controls { display: flex; gap: 6px; background: var(--os-white); padding: 0 2px; }
+        .win-controls button {
+            width: 26px; height: 22px; padding: 0;
+            border: 2px solid var(--os-black);
+            background: var(--os-white);
+            color: var(--os-black);
+            font: 13px var(--font-pixel); line-height: 1;
+            cursor: pointer; border-radius: 0;        /* square, like the Mac close box */
+            touch-action: manipulation;
+        }
+        .win-controls button:hover { background: var(--os-black); color: var(--os-white); }
+        .win-body { padding: 12px 14px 14px; overflow: auto; background: var(--os-white); }
+        .win .radio-title { display: none; }           /* titlebar already names it */
+        .win.min .win-body, .win.min .win-resize { display: none; }
+        .win-resize {
+            height: 14px; cursor: nwse-resize;
+            border-top: 1px solid var(--os-black);
+            background: linear-gradient(135deg, transparent 55%, var(--os-black) 55% 63%, transparent 63% 74%, var(--os-black) 74% 82%, transparent 82%);
+            background-position: right center; background-repeat: no-repeat; background-size: 22px 14px;
+        }
+
+        #radio-reopen {
+            position: fixed; left: 16px; bottom: 16px; z-index: 30;
+            display: none;
+            padding: 10px 16px; background: transparent; border: none;
+            color: var(--eb-ink); font: 14px var(--font-pixel); cursor: pointer;
+            filter: var(--box-shadow);
+        }
+        #radio-reopen > * { position: relative; z-index: 1; }
+
+        /* ------------ RADIO WIDGET ---------------------------------- */
+        .radio { display: flex; flex-direction: column; gap: 10px; }
+        .radio .row {
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            font: 14px var(--font-pixel); color: var(--eb-muted);
+        }
+        .radio select {
+            flex: 1; min-width: 0;
+            background: var(--os-white); border: 2px solid var(--os-black);
+            color: var(--os-black); padding: 6px 9px; border-radius: 0;
+            font: 14px var(--font-pixel); letter-spacing: 0.06em;
+        }
+        .radio button {
+            padding: 6px 13px; border: none; background: transparent;
+            color: var(--os-black); cursor: pointer;
+            font: 14px var(--font-pixel); letter-spacing: 0.06em; position: relative;
+        }
+        .radio button > * { position: relative; z-index: 1; }
+        .radio button:hover { filter: invert(0.06); }
+        /* The oscilloscope is the CRT: green phosphor trace on near-black. */
+        .radio .scope {
+            display: block; width: 100%; height: 60px;
+            background: var(--term-bg); border: 2px solid var(--os-black);
+            border-radius: 0; box-shadow: inset 0 0 14px rgba(51,255,102,0.12);
+        }
+        .radio .status { color: var(--term-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+        .radio .info   { color: var(--eb-muted); }
+
+        /* ------------ MOBILE LAYOUT ------------------------------------
+           Touch phones: bigger tap targets, the radio becomes a bottom sheet
+           (still minimizable to its titlebar), and the action buttons move to
+           a reachable top-right stack so the sheet never covers them. */
+        @media (max-width: 720px), (pointer: coarse) {
+            #ui-overlay {
+                top: calc(10px + env(safe-area-inset-top)); bottom: auto;
+                right: calc(10px + env(safe-area-inset-right));
+                gap: 10px;
+            }
+            .eb-btn { font-size: 18px; padding: 14px 22px; }
+
+            #radio-win {
+                left: 0 !important; right: 0 !important;
+                bottom: 0 !important; top: auto !important;
+                width: auto !important;
+                border-left: none; border-right: none; border-bottom: none;
+                border-radius: 0; box-shadow: none;
+                max-height: 60dvh; max-height: 60vh;
+            }
+            #radio-win .win-body { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+            #radio-win .win-resize { display: none; }
+            #radio-win .win-bar { cursor: default; }
+            .win-controls button { width: 40px; height: 34px; font-size: 16px; }
+
+            #radio-reopen {
+                left: calc(12px + env(safe-area-inset-left));
+                bottom: calc(12px + env(safe-area-inset-bottom));
+                padding: 14px 20px; font-size: 16px;
+            }
+            /* 16px min stops iOS auto-zoom on focus (it ignores user-scalable). */
+            .radio select { font-size: 16px; min-height: 42px; }
+            .radio button { padding: 11px 16px; font-size: 15px; }
+            .radio .scope { height: 52px; }
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="ui-overlay" class="ui-block">
+        <button id="director-btn" class="eb-btn">Director Mode</button>
+        <button id="spawn-btn" class="eb-btn">Spawn Friend</button>
+    </div>
+
+    <!-- Draggable / minimizable / resizable radio window -->
+    <div id="radio-win" class="win ui-block">
+        <div class="win-bar">
+            <span class="win-title">◉ RADIO</span>
+            <span class="win-controls">
+                <button class="win-min" title="minimize">▁</button>
+                <button class="win-close" title="close">✕</button>
+            </span>
+        </div>
+        <div class="win-body" id="radio-body"></div>
+        <div class="win-resize" title="resize"></div>
+    </div>
+    <button id="radio-reopen" class="ui-block"><span class="pf-label">◉ RADIO</span></button>
+
+    <div id="canvas-container"></div>
+
+    <script src="js/pixel-frame.js"></script>
+    <script src="js/audio-engine.js"></script>
+    <script src="js/radio.js"></script>
+    <script src="js/audio-reactive.js"></script>
+
+    <script>
+        // --- 1. Scene & free-fly perspective camera ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = null; // dithered backdrop drawn in its own pass
+
+        // Render buffer height (upscaled with image-rendering:pixelated). Higher
+        // = finer Bayer dithering. The floor's screen gradient tracks this value.
+        const RENDER_H = 300;
+        let aspect = window.innerWidth / window.innerHeight;
+
+        // Orthographic ISOMETRIC camera (orbit / pan / zoom), ported from the
+        // AudioBiome prototype. Manual control is event-driven; Director Mode
+        // animates these same params (theta / phi / target / frustum) per frame.
+        let frustumSize = 48;
+        const camera = new THREE.OrthographicCamera(
+            -frustumSize * aspect / 2, frustumSize * aspect / 2,
+            frustumSize / 2, -frustumSize / 2, 1, 3000);
+        const cameraTarget = new THREE.Vector3(0, 6, 0);
+        let cameraTheta = Math.PI / 4;        // 45° azimuth → classic isometric
+        let cameraPhi = Math.PI / 3.3;        // tilt down toward the ground
+        const cameraRadius = 600;             // ortho: only sets view direction + clip
+
+        function applyFrustum() {
+            camera.left = -frustumSize * aspect / 2; camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2; camera.bottom = -frustumSize / 2;
+            camera.updateProjectionMatrix();
+        }
+        function updateCamera() {
+            camera.position.x = cameraTarget.x + cameraRadius * Math.sin(cameraPhi) * Math.sin(cameraTheta);
+            camera.position.y = cameraTarget.y + cameraRadius * Math.cos(cameraPhi);
+            camera.position.z = cameraTarget.z + cameraRadius * Math.sin(cameraPhi) * Math.cos(cameraTheta);
+            camera.lookAt(cameraTarget);
+        }
+        applyFrustum();
+        updateCamera();
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+        renderer.setSize(RENDER_H * aspect, RENDER_H);
+        renderer.setPixelRatio(1);
+        renderer.autoClear = false;
+        container.appendChild(renderer.domElement);
+        const canvasEl = renderer.domElement;
+
+        // --- 2. Dynamic canvas for voxel splotch trails ---
+        // RGBA so each creature paints its OWN colour; overlaps blend like paint.
+        const arenaSize = 250;
+        const trailCanvas = document.createElement('canvas');
+        trailCanvas.width = 1024; trailCanvas.height = 1024;
+        const trailCtx = trailCanvas.getContext('2d');
+        trailCtx.imageSmoothingEnabled = false;
+        trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height); // transparent
+
+        const trailTex = new THREE.CanvasTexture(trailCanvas);
+        trailTex.magFilter = THREE.NearestFilter;
+        trailTex.minFilter = THREE.NearestFilter;
+        trailTex.flipY = false;
+
+        function paintTrail(worldX, worldZ, radius, colorCss) {
+            radius = radius || 5;
+            const px = Math.floor(((worldX + arenaSize / 2) / arenaSize) * trailCanvas.width);
+            const py = Math.floor(((worldZ + arenaSize / 2) / arenaSize) * trailCanvas.height);
+            trailCtx.globalAlpha = 0.5;                       // build-up so overlaps blend
+            trailCtx.fillStyle = colorCss || '#ffffff';
+            const r2 = radius * radius + 2;
+            for (let i = -radius; i <= radius; i++) {
+                for (let j = -radius; j <= radius; j++) {
+                    if (i * i + j * j <= r2) trailCtx.fillRect(px + i, py + j, 1, 1);
+                }
+            }
+            trailCtx.globalAlpha = 1.0;
+            trailTex.needsUpdate = true;
+        }
+
+        // --- 3. Shader configuration ---
+        const staticLightDir = new THREE.Vector3(1, 2, 1).normalize();
+
+        // Grayscale ramp with a LOW white point — most lit surface reads pure
+        // white, a thin dithered band and a dark shadow carry the shape, so the
+        // scheme has very little mid-gray.
+        const baseUniforms = {
+            u_lightDir: { value: staticLightDir },
+            u_c1: { value: new THREE.Color('#FFFFFF') },  // light (dominant)
+            u_c2: { value: new THREE.Color('#FFFFFF') },
+            u_c3: { value: new THREE.Color('#DCDCDC') },  // single transitional gray
+            u_c4: { value: new THREE.Color('#B0B0B0') },
+            u_c5: { value: new THREE.Color('#8A8A8A') },
+            u_c6: { value: new THREE.Color('#5E5E5E') },  // shadow
+            u_colorOutline: { value: new THREE.Color('#0d0a0c') },   // near-black ink outline
+            u_time: { value: 0.0 },
+            u_pixelSize: { value: 1.0 },
+            u_ditherMode: { value: 1 },   // 0 fine · 1 bayer · 2 geometric · 3 jagged
+            u_musicTint: { value: new THREE.Color('#7bf06a') },
+            u_musicAmt:  { value: 0.0 },
+            // Liquid paint controls (EarthBound-style layered patterns).
+            u_paintPhase:     { value: 0.0 },
+            u_paintIntensity: { value: 0.4 },
+            u_layerA:     { value: 0 },
+            u_layerB:     { value: 1 },
+            u_layerBlend: { value: 0.0 }
+        };
+
+        const blobUniforms = {
+            u_lightDir:     baseUniforms.u_lightDir,
+            u_pixelSize:    baseUniforms.u_pixelSize,
+            u_colorOutline: baseUniforms.u_colorOutline,
+            u_musicTint:    baseUniforms.u_musicTint,
+            u_musicAmt:     baseUniforms.u_musicAmt,
+            u_cLight: { value: new THREE.Color('#f4e9e0') },
+            u_cMid:   { value: new THREE.Color('#c9a9b0') },
+            u_cDark:  { value: new THREE.Color('#6e4b5a') },
+            u_cPitch: { value: new THREE.Color('#2a1622') }
+        };
+
+        // The four fundamental dither methods from the shading reference,
+        // selected per-frame by u_ditherMode: fine-dot noise, ordered Bayer 4x4,
+        // geometric cosine, and directional jagged.
+        const ditherBayer = `
+        uniform int u_ditherMode;
+        float bayer4(vec2 pos) {
+            float m_x = mod(pos.x, 4.0); float m_y = mod(pos.y, 4.0); float d = 0.0;
+            if (m_y == 0.0) { if (m_x == 0.0) d = 0.0; else if (m_x == 1.0) d = 8.0; else if (m_x == 2.0) d = 2.0; else d = 10.0; }
+            else if (m_y == 1.0) { if (m_x == 0.0) d = 12.0; else if (m_x == 1.0) d = 4.0; else if (m_x == 2.0) d = 14.0; else d = 6.0; }
+            else if (m_y == 2.0) { if (m_x == 0.0) d = 3.0; else if (m_x == 1.0) d = 11.0; else if (m_x == 2.0) d = 1.0; else d = 9.0; }
+            else { if (m_x == 0.0) d = 15.0; else if (m_x == 1.0) d = 7.0; else if (m_x == 2.0) d = 13.0; else d = 5.0; }
+            return d / 16.0;
+        }
+        float getDither(vec2 pos) {
+            if (u_ditherMode == 0) return fract(sin(dot(pos.xy, vec2(12.9898, 78.233))) * 43758.5453);
+            else if (u_ditherMode == 2) return (cos(pos.x * 1.5) * cos(pos.y * 1.5)) * 0.5 + 0.5;
+            else if (u_ditherMode == 3) return fract((pos.x + pos.y * 1.5) * 0.25 + (sin(pos.y * 0.8) * 0.5));
+            return bayer4(pos);
+        }`;
+
+        // HSV <-> RGB so the floor can pull a creature's HUE out of its splotch
+        // colour and rebuild light / dark shades of that same hue.
+        const hsvHelpers = `
+        vec3 rgb2hsv(vec3 c) {
+            vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+            vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+            vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+            float d = q.x - min(q.w, q.y);
+            float e = 1.0e-10;
+            return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+        }
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }`;
+
+        // White point moved way down: light (u_c1) covers everything above 0.6,
+        // a single dithered gray band sits between shadow and light, and the
+        // darkest tone handles the shadow — so mid-gray is uncommon.
+        const ditherRamp = `
+            vec3 getShade(float intensity, float dither) {
+                if (intensity < 0.28) return u_c6;
+                else if (intensity < 0.45) return mix(u_c6, u_c3, step(dither, (intensity - 0.28) / 0.17));
+                else if (intensity < 0.6)  return mix(u_c3, u_c1, step(dither, (intensity - 0.45) / 0.15));
+                return u_c1;
+            }
+        `;
+
+        const bandRamp = `
+            vec3 getBands(float li, float dither, vec3 L, vec3 M, vec3 D, vec3 P) {
+                if (li < 0.25) return P;
+                else if (li < 0.45) return mix(P, D, step(dither, (li - 0.25) / 0.2));
+                else if (li < 0.7)  return mix(D, M, step(dither, (li - 0.45) / 0.25));
+                else if (li < 0.85) return mix(M, L, step(dither, (li - 0.7) / 0.15));
+                return L;
+            }
+        `;
+
+        // White Mii-Maker backdrop — a barely-there dithered light-grey gradient
+        // at the top fading to pure white.
+        const bgFrag = `
+            varying vec2 vUv; ${ditherBayer}
+            void main() {
+                vec2 coord = floor(gl_FragCoord.xy);
+                float dither = getDither(coord);
+                float t = clamp(vUv.y * 0.5 + 0.5, 0.0, 1.0);
+                vec3 lo = vec3(0.90), hi = vec3(1.0);
+                vec3 col = mix(lo, hi, step(dither, t));
+                gl_FragColor = vec4(col, 1.0);
+            }
+        `;
+
+        // Reference liquid paint — four colours blended by the dither, driven
+        // by u_paintPhase (slow). Only two colours mix per pixel → no noise.
+        const paintColors = `
+            uniform float u_paintPhase;
+            vec3 getDynamicPaint(vec3 wp, float time, float dither) {
+                vec3 colA = vec3(0.0, 0.8, 1.0);   // cyan
+                vec3 colB = vec3(1.0, 0.2, 0.6);   // pink
+                vec3 colC = vec3(1.0, 0.8, 0.2);   // yellow-orange
+                vec3 colD = vec3(0.3, 0.9, 0.3);   // mint green
+
+                float w1 = (sin(wp.x * 0.08 + time * 1.5) + 1.0) * 0.5;
+                float w2 = (cos(wp.z * 0.08 - time * 1.2) + 1.0) * 0.5;
+                float w3 = (sin((wp.x + wp.z) * 0.05 + time) + 1.0) * 0.5;
+
+                vec3 mix1 = mix(colA, colB, step(dither, w1));
+                vec3 mix2 = mix(colC, colD, step(dither, w2));
+                return mix(mix1, mix2, step(dither, w3));
+            }
+        `;
+
+        // Reference blob shader — clean grayscale Bayer dither, no fresnel rim
+        // (that was the source of the stray beige pixels) and no colour tint.
+        // Blob shader = the 3D-DitherShadingReference method verbatim: hard cel
+        // outline, then 5 bands (Dark / dithered Dark→Mid / Mid / dithered
+        // Mid→Light / Light) at the reference thresholds. Our additions: the
+        // outline threshold and Bayer cell size scale with camera distance,
+        // and each creature supplies its own Light/Mid/Dark band colours.
+        const blobMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                ...baseUniforms,
+                u_colorLight: { value: new THREE.Color('#FAE5D3') },
+                u_colorMid:   { value: new THREE.Color('#A95C5C') },
+                u_colorDark:  { value: new THREE.Color('#4A2B35') }
+            },
+            vertexShader: `varying vec3 vNormal; varying float vDepth; void main() { vNormal = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position, 1.0); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }`,
+            fragmentShader: `
+                uniform vec3 u_lightDir; uniform float u_pixelSize;
+                uniform vec3 u_colorLight; uniform vec3 u_colorMid; uniform vec3 u_colorDark; uniform vec3 u_colorOutline;
+                varying vec3 vNormal; varying float vDepth; ${ditherBayer}
+                void main() {
+                    float viewDotNormal = dot(vNormal, vec3(0.0, 0.0, 1.0));
+                    float li = dot(vNormal, normalize(u_lightDir)) * 0.5 + 0.5;
+                    // BLACK OUTLINE OF VARYING THICKNESS: the silhouette band is
+                    // widened on the shaded side (ink pools where light falls off)
+                    // and thin on the lit side, with a small dithered jitter so the
+                    // edge reads hand-inked rather than a mechanical hairline.
+                    float thick = 0.30 + (1.0 - li) * 0.26;
+                    float jitter = (bayer4(floor(gl_FragCoord.xy / u_pixelSize)) - 0.5) * 0.08;
+                    if (viewDotNormal < thick + jitter) { gl_FragColor = vec4(u_colorOutline, 1.0); return; }
+
+                    float dither = getDither(floor(gl_FragCoord.xy / u_pixelSize));
+                    vec3 finalColor;
+                    if (li < 0.3) {
+                        finalColor = u_colorDark;
+                    } else if (li < 0.5) {
+                        finalColor = mix(u_colorDark, u_colorMid, step(dither, (li - 0.3) / 0.2));
+                    } else if (li < 0.65) {
+                        finalColor = u_colorMid;
+                    } else if (li < 0.85) {
+                        finalColor = mix(u_colorMid, u_colorLight, step(dither, (li - 0.65) / 0.2));
+                    } else {
+                        finalColor = u_colorLight;
+                    }
+                    gl_FragColor = vec4(finalColor, 1.0);
+                }
+            `
+        });
+
+        const blushMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                u_lightDir:     baseUniforms.u_lightDir,
+                u_pixelSize:    baseUniforms.u_pixelSize,
+                u_colorOutline: baseUniforms.u_colorOutline,
+                u_ditherMode:   baseUniforms.u_ditherMode,
+                u_colorLight: { value: new THREE.Color('#FFB6C1') },
+                u_colorMid:   { value: new THREE.Color('#FF69B4') },
+                u_colorDark:  { value: new THREE.Color('#C71585') }
+            },
+            vertexShader: blobMaterial.vertexShader,
+            fragmentShader: blobMaterial.fragmentShader
+        });
+
+        const floorMaterial = new THREE.ShaderMaterial({
+            uniforms: { ...baseUniforms, u_trailMap: { value: trailTex } },
+            vertexShader: `
+                varying vec3 vWorldPosition; varying float vViewDepth;
+                void main() {
+                    vec4 wp = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = wp.xyz;
+                    vec4 mv = viewMatrix * wp;
+                    vViewDepth = -mv.z;
+                    gl_Position = projectionMatrix * mv;
+                }`,
+            fragmentShader: `
+                uniform sampler2D u_trailMap; uniform float u_time; uniform float u_paintPhase; uniform float u_pixelSize;
+                varying vec3 vWorldPosition; varying float vViewDepth;
+                ${ditherBayer} ${hsvHelpers}
+                // Ground palette from the reference image: white <-> mauve.
+                const vec3 GROUND_HI = vec3(1.0, 1.0, 1.0);
+                const vec3 GROUND_LO = vec3(0.659, 0.604, 0.588);   // #A89A96
+                void main() {
+                    float dither = getDither(floor(gl_FragCoord.xy / u_pixelSize));
+
+                    // Shaded ground with a strong near→far gradient (the image
+                    // look): the bottom of the screen is near the camera = mauve,
+                    // fading up to white in the distance. A soft central glow and a
+                    // slow world-space wave keep the dithered surface breathing
+                    // instead of reading as a flat sparse grid.
+                    float screenY = gl_FragCoord.y / ${RENDER_H}.0;         // 0 near → 1 far
+                    float glow = smoothstep(150.0, 0.0, length(vWorldPosition.xz)) * 0.16;
+                    float wave = sin(vWorldPosition.x * 0.05 + u_paintPhase * 0.6)
+                               * cos(vWorldPosition.z * 0.05 - u_paintPhase * 0.4);
+                    float li = clamp(0.10 + screenY * 0.86 + glow + wave * 0.07, 0.0, 1.0);
+                    vec3 baseColor = mix(GROUND_LO, GROUND_HI, step(dither, li));
+
+                    // --- Per-creature-hue splotches -------------------------------
+                    // The trail stores the painting creature's colour (rgb) + a
+                    // coverage (a). Keep only its HUE, then dither between a DARK
+                    // shade and a LIGHT shade of that hue; saturation and the split
+                    // point drift over time+space for a mesmerizing moving gradient.
+                    vec2 trailUV = vec2((vWorldPosition.x + 125.0) / 250.0, (vWorldPosition.z + 125.0) / 250.0);
+                    vec4 tr = vec4(0.0);
+                    if(trailUV.x >= 0.0 && trailUV.x <= 1.0 && trailUV.y >= 0.0 && trailUV.y <= 1.0) {
+                        tr = texture2D(u_trailMap, trailUV);
+                    }
+                    if (tr.a > 0.001) {
+                        vec3 chsv = rgb2hsv(tr.rgb);
+                        float hue = chsv.x;
+                        // Constant brightness — the light/dark flicker is removed.
+                        float val = clamp(chsv.z, 0.62, 0.92);
+                        // Two shades of the SAME hue whose saturation (and a hair of
+                        // hue) drift independently over time + space, so the puddle
+                        // keeps shifting through gradients of its own colour.
+                        float n1 = 0.5 + 0.5 * sin(u_time * 0.55 + vWorldPosition.x * 0.060 + vWorldPosition.z * 0.045);
+                        float n2 = 0.5 + 0.5 * sin(u_time * 0.42 - vWorldPosition.z * 0.055 + vWorldPosition.x * 0.030 + 2.1);
+                        vec3 shadeA = hsv2rgb(vec3(hue + (n1 - 0.5) * 0.05, mix(0.45, 0.98, n1), val));
+                        vec3 shadeB = hsv2rgb(vec3(hue + (n2 - 0.5) * 0.05, mix(0.45, 0.98, n2), val));
+                        // Flowing split point → the dither reads as a moving gradient.
+                        float flow = 0.5 + 0.5 * sin(vWorldPosition.x * 0.10 + u_time * 1.1)
+                                               * cos(vWorldPosition.z * 0.10 - u_time * 0.85);
+                        vec3 splotch = mix(shadeA, shadeB, step(dither, flow));
+                        float cov  = clamp(tr.a * (0.6 + 0.8 * flow), 0.0, 1.0);
+                        float mask = step(dither, cov);
+                        baseColor = mix(baseColor, splotch, mask);
+                    }
+                    gl_FragColor = vec4(baseColor, 1.0);
+                }
+            `
+        });
+
+        // Voxel particles carry the colour of the creature that spawned them.
+        const particleVertexShader = `varying vec3 vWorldPosition; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vWorldPosition = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`;
+        const particleFragmentShader = `
+                uniform vec3 u_color; varying vec3 vWorldPosition; ${ditherBayer}
+                void main() {
+                    float dither = getDither(floor(gl_FragCoord.xy));
+                    vec3 c = u_color * (0.7 + 0.3 * step(dither, 0.5));
+                    gl_FragColor = vec4(c, 1.0);
+                }
+            `;
+        function makeParticleMat(col) {
+            return new THREE.ShaderMaterial({
+                uniforms: { u_ditherMode: baseUniforms.u_ditherMode, u_color: { value: col } },
+                vertexShader: particleVertexShader,
+                fragmentShader: particleFragmentShader
+            });
+        }
+
+        // Background scene: clip-space quad drawn behind the world.
+        const bgScene = new THREE.Scene();
+        const bgCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const bgMaterial = new THREE.ShaderMaterial({
+            uniforms: { u_ditherMode: { value: 1 } },   // backdrop stays on clean Bayer
+            vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
+            fragmentShader: bgFrag,
+            depthTest: false, depthWrite: false
+        });
+        bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMaterial));
+
+        // --- 4. Object creation ---
+        const floorGeo = new THREE.PlaneGeometry(10000, 10000);
+        const floor = new THREE.Mesh(floorGeo, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        const creatures = [];
+        const geometries = [
+            new THREE.SphereGeometry(2, 40, 40),
+            new THREE.BoxGeometry(3.2, 3.2, 3.2),
+            new THREE.CylinderGeometry(1.8, 1.8, 3.5, 24),
+            new THREE.DodecahedronGeometry(2.2)
+        ];
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+        const eyeGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const blushGeo = new THREE.PlaneGeometry(0.8, 0.4);
+
+        function spawnCreature(x, z) {
+            // Each friend gets its own random RGB colour, used both for its body
+            // and for the splotches it paints on the ground.
+            const color = new THREE.Color().setHSL(Math.random(), 0.62 + Math.random() * 0.28, 0.5 + Math.random() * 0.12);
+            const creature = {
+                group: new THREE.Group(),
+                velocity: new THREE.Vector3(0, 0, 0),
+                idleTimer: Math.random() * 2 + 0.5,
+                eyeTimer: 0, lookTimer: 0,
+                lookDir: new THREE.Vector2(0, 0),
+                squishTimer: 0, blushTimer: 0,
+                radius: 2.0, isDragged: false,
+                dancing: false, danceIndex: 0, danceCount: 1,
+                color, colorCss: '#' + color.getHexString()
+            };
+
+            const geo = geometries[Math.floor(Math.random() * geometries.length)];
+            // Per-creature material: shares the global uniforms, but supplies its
+            // own Light/Mid/Dark band colours (reference-style ramp derived from
+            // the creature's hue — light tint, the colour itself, deep shade).
+            const hsl = { h: 0, s: 0, l: 0 };
+            color.getHSL(hsl);
+            const colLight = new THREE.Color().setHSL(hsl.h, Math.max(0.25, hsl.s * 0.65), Math.min(0.92, hsl.l + 0.32));
+            const colDark  = new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 1.05), Math.max(0.10, hsl.l * 0.38));
+            const mat = new THREE.ShaderMaterial({
+                uniforms: {
+                    ...baseUniforms,
+                    u_colorLight: { value: colLight },
+                    u_colorMid:   { value: color },
+                    u_colorDark:  { value: colDark }
+                },
+                vertexShader: blobMaterial.vertexShader,
+                fragmentShader: blobMaterial.fragmentShader
+            });
+            creature.body = new THREE.Mesh(geo, mat);
+            creature.group.add(creature.body);
+
+            const face = new THREE.Group();
+            creature.eyeL = new THREE.Mesh(eyeGeo, eyeMat); creature.eyeL.position.set(-0.7, 0.5, 1.8);
+            creature.eyeR = new THREE.Mesh(eyeGeo, eyeMat); creature.eyeR.position.set(0.7, 0.5, 1.8);
+            creature.blushL = new THREE.Mesh(blushGeo, blushMaterial); creature.blushL.position.set(-0.7, 0.1, 1.85); creature.blushL.visible = false;
+            creature.blushR = new THREE.Mesh(blushGeo, blushMaterial); creature.blushR.position.set(0.7, 0.1, 1.85); creature.blushR.visible = false;
+
+            face.add(creature.eyeL); face.add(creature.eyeR);
+            face.add(creature.blushL); face.add(creature.blushR);
+            creature.face = face;
+            creature.group.add(face);
+
+            creature.group.position.set(x, 15, z);
+            scene.add(creature.group);
+            creatures.push(creature);
+        }
+
+        spawnCreature(0, 0);
+        document.getElementById('spawn-btn').addEventListener('click', () => {
+            spawnCreature((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20);
+        });
+
+        const particles = [];
+        const partGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        function spawnParticles(pos, vel, color, colorCss) {
+            if (particles.length > 200) return;   // keep the air from filling with bright specks
+            const mat = makeParticleMat(color || new THREE.Color('#ffffff'));
+            for (let i = 0; i < 5; i++) {
+                const p = new THREE.Mesh(partGeo, mat);
+                p.position.copy(pos); p.position.y -= 1.0;
+                // Low, splashy arcs that stay near the floor instead of flying up.
+                p.velocity = new THREE.Vector3((Math.random() - 0.5) * 9 + vel.x * 0.25, Math.random() * 7 + 3, (Math.random() - 0.5) * 9 + vel.z * 0.25);
+                p.life = 1.0; p._trailT = 0; p._trailCss = colorCss || '#ffffff'; scene.add(p); particles.push(p);
+            }
+        }
+
+        // --- 5. Physics constants ---
+        const gravity = -100.0;
+        const maxVelocity = 120.0;
+        const bounceFactor = 0.6;
+        const friction = 0.75;
+        const floorY = 0;
+
+        // --- 6. Input: orbit / pan / zoom (isometric) + creature grab ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        let draggedCreature = null;
+        let dragPlane = new THREE.Plane();
+        let previousMousePos = new THREE.Vector3();
+        let isOrbiting = false, isPanning = false;
+        let prevScreen = { x: 0, y: 0 };
+        let directorMode = false;
+
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        // Right-drag orbits, left-drag on empty ground pans, wheel zooms; a
+        // left-press on a friend grabs it to drag & throw.
+        canvasEl.addEventListener('mousedown', (event) => {
+            if (directorMode) return;                       // camera on autopilot
+            prevScreen = { x: event.clientX, y: event.clientY };
+            if (event.button === 2) { isOrbiting = true; return; }
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(creatures.map(c => c.group), true);
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                while (obj.parent && obj.parent !== scene) obj = obj.parent;
+                draggedCreature = creatures.find(c => c.group === obj);
+                if (draggedCreature) {
+                    draggedCreature.isDragged = true;
+                    draggedCreature.dancing = false;
+                    const camDir = new THREE.Vector3();
+                    camera.getWorldDirection(camDir);
+                    dragPlane.setFromNormalAndCoplanarPoint(camDir.negate(), draggedCreature.group.position);
+                    raycaster.ray.intersectPlane(dragPlane, previousMousePos);
+                    draggedCreature.velocity.set(0, 0, 0);
+                }
+            } else {
+                isPanning = true;
+            }
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            if (isOrbiting) {
+                const dx = event.clientX - prevScreen.x, dy = event.clientY - prevScreen.y;
+                prevScreen = { x: event.clientX, y: event.clientY };
+                cameraTheta -= dx * 0.01;
+                cameraPhi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, cameraPhi - dy * 0.01));
+                updateCamera();
+            } else if (draggedCreature) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const currentPos = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(dragPlane, currentPos)) {
+                    draggedCreature.velocity.copy(currentPos).sub(previousMousePos).multiplyScalar(60);
+                    draggedCreature.group.position.copy(currentPos);
+                    previousMousePos.copy(currentPos);
+                }
+            } else if (isPanning) {
+                const dx = event.clientX - prevScreen.x, dy = event.clientY - prevScreen.y;
+                prevScreen = { x: event.clientX, y: event.clientY };
+                const panSpeed = frustumSize / window.innerHeight;
+                const oldPos = camera.position.clone();
+                camera.translateX(-dx * panSpeed);
+                camera.translateY(dy * panSpeed);
+                cameraTarget.add(camera.position.clone().sub(oldPos));
+                updateCamera();
+            }
+        });
+
+        window.addEventListener('mouseup', (event) => {
+            if (event.button === 2) isOrbiting = false;
+            if (draggedCreature) {
+                if (draggedCreature.velocity.length() > maxVelocity) draggedCreature.velocity.setLength(maxVelocity);
+                draggedCreature.isDragged = false;
+                draggedCreature = null;
+            }
+            isPanning = false;
+        });
+
+        canvasEl.addEventListener('wheel', (event) => {
+            frustumSize = Math.max(24, Math.min(160, frustumSize + event.deltaY * 0.04));
+            applyFrustum();
+        }, { passive: true });
+
+        // ---- Touch: 1 finger orbits (or grabs a friend), 2 fingers pinch-zoom
+        //      and pan. Mirrors the mouse scheme so phones are fully navigable.
+        let touchMode = 'none';                 // 'orbit' | 'creature' | 'gesture'
+        let pinchDist0 = 0, frustum0 = 0;
+        let touchPrev = { x: 0, y: 0 };
+        function touchNDC(t) {
+            mouse.x = (t.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(t.clientY / window.innerHeight) * 2 + 1;
+        }
+        function twoFingerCenter(e) {
+            const a = e.touches[0], b = e.touches[1];
+            return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2,
+                     d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
+        }
+
+        canvasEl.addEventListener('touchstart', (e) => {
+            if (directorMode) return;
+            if (e.touches.length === 1) {
+                const t = e.touches[0];
+                touchPrev = { x: t.clientX, y: t.clientY };
+                touchNDC(t); raycaster.setFromCamera(mouse, camera);
+                const hits = raycaster.intersectObjects(creatures.map(c => c.group), true);
+                if (hits.length > 0) {
+                    let obj = hits[0].object;
+                    while (obj.parent && obj.parent !== scene) obj = obj.parent;
+                    draggedCreature = creatures.find(c => c.group === obj);
+                    if (draggedCreature) {
+                        draggedCreature.isDragged = true; draggedCreature.dancing = false;
+                        const cd = new THREE.Vector3(); camera.getWorldDirection(cd);
+                        dragPlane.setFromNormalAndCoplanarPoint(cd.negate(), draggedCreature.group.position);
+                        raycaster.ray.intersectPlane(dragPlane, previousMousePos);
+                        draggedCreature.velocity.set(0, 0, 0);
+                        touchMode = 'creature';
+                    } else touchMode = 'orbit';
+                } else touchMode = 'orbit';
+            } else if (e.touches.length === 2) {
+                if (draggedCreature) { draggedCreature.isDragged = false; draggedCreature = null; }
+                touchMode = 'gesture';
+                const c = twoFingerCenter(e);
+                pinchDist0 = c.d; frustum0 = frustumSize; touchPrev = { x: c.x, y: c.y };
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        canvasEl.addEventListener('touchmove', (e) => {
+            if (directorMode) return;
+            if (touchMode === 'creature' && draggedCreature && e.touches.length >= 1) {
+                const t = e.touches[0]; touchNDC(t); raycaster.setFromCamera(mouse, camera);
+                const cp = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(dragPlane, cp)) {
+                    draggedCreature.velocity.copy(cp).sub(previousMousePos).multiplyScalar(60);
+                    draggedCreature.group.position.copy(cp); previousMousePos.copy(cp);
+                }
+            } else if (touchMode === 'orbit' && e.touches.length === 1) {
+                const t = e.touches[0];
+                const dx = t.clientX - touchPrev.x, dy = t.clientY - touchPrev.y;
+                touchPrev = { x: t.clientX, y: t.clientY };
+                cameraTheta -= dx * 0.01;
+                cameraPhi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, cameraPhi - dy * 0.01));
+                updateCamera();
+            } else if (touchMode === 'gesture' && e.touches.length === 2) {
+                const c = twoFingerCenter(e);
+                if (pinchDist0 > 0 && c.d > 0) {
+                    frustumSize = Math.max(24, Math.min(160, frustum0 * (pinchDist0 / c.d)));
+                    applyFrustum();
+                }
+                const dx = c.x - touchPrev.x, dy = c.y - touchPrev.y; touchPrev = { x: c.x, y: c.y };
+                const panSpeed = frustumSize / window.innerHeight;
+                const oldPos = camera.position.clone();
+                camera.translateX(-dx * panSpeed); camera.translateY(dy * panSpeed);
+                cameraTarget.add(camera.position.clone().sub(oldPos));
+                updateCamera();
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        function endTouch(e) {
+            if (draggedCreature && e.touches.length === 0) {
+                if (draggedCreature.velocity.length() > maxVelocity) draggedCreature.velocity.setLength(maxVelocity);
+                draggedCreature.isDragged = false; draggedCreature = null;
+            }
+            if (e.touches.length === 0) touchMode = 'none';
+            else if (e.touches.length === 1) { touchMode = draggedCreature ? 'creature' : 'orbit'; touchPrev = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }
+        }
+        canvasEl.addEventListener('touchend', endTouch, { passive: false });
+        canvasEl.addEventListener('touchcancel', endTouch, { passive: false });
+
+        // --- 7. Choreography: a dance that grows by contact ---
+        let danceUntil = 0, danceCooldown = 5, danceFormation = 'circle', danceActive = false;
+        const danceCenter = new THREE.Vector3();
+        let danceParticipants = [];
+
+        function updateDance(now, dt) {
+            if (danceActive) {
+                // Keep the roster clean and re-number members each frame (new
+                // members can join mid-dance via contact — see the collision loop).
+                danceParticipants = danceParticipants.filter(c => creatures.indexOf(c) !== -1 && !c.isDragged);
+                if (now >= danceUntil || danceParticipants.length === 0) {
+                    danceParticipants.forEach(c => c.dancing = false);
+                    danceParticipants = []; danceActive = false;
+                    danceCooldown = 7 + Math.random() * 7;
+                    return;
+                }
+                const n = danceParticipants.length;
+                danceParticipants.forEach((c, i) => { c.dancing = true; c.danceIndex = i; c.danceCount = n; });
+                return;
+            }
+            danceCooldown -= dt;
+            const eligible = creatures.filter(c => !c.isDragged);
+            if (reactive.active && reactive.level > 0.06 && danceCooldown <= 0 && eligible.length >= 2) {
+                // Seed with one friend + its nearest neighbour; the rest join by contact.
+                const seed = eligible[Math.floor(Math.random() * eligible.length)];
+                let nn = null, nd = 1e9;
+                for (const c of eligible) if (c !== seed) { const d = c.group.position.distanceTo(seed.group.position); if (d < nd) { nd = d; nn = c; } }
+                danceParticipants = nn ? [seed, nn] : [seed];
+                danceFormation = Math.random() < 0.5 ? 'circle' : 'sine';
+                danceCenter.copy(seed.group.position); danceCenter.y = 0;
+                danceParticipants.forEach((c, i) => { c.dancing = true; c.danceIndex = i; c.danceCount = danceParticipants.length; });
+                danceActive = true;
+                danceUntil = now + Math.max(9, 14 * reactive.beatInterval);
+            }
+        }
+
+        // A blob that bumps into an active dancer joins the formation.
+        function danceTryRecruit(c1, c2, now) {
+            if (!danceActive || c1.dancing === c2.dancing) return false;
+            const joiner = c1.dancing ? c2 : c1;
+            if (joiner.isDragged) return false;
+            joiner.dancing = true;
+            if (danceParticipants.indexOf(joiner) === -1) danceParticipants.push(joiner);
+            danceUntil = Math.max(danceUntil, now + 4);   // growing party lasts longer
+            return true;
+        }
+
+        // --- 8. Creature update ---
+        function updateCreature(c, dt, time) {
+            // Facial expression on every beat (drives eye scale + blush).
+            if (reactive.beat) {
+                c.blushTimer = Math.max(c.blushTimer, 0.8);
+                if (reactive.pitch > 0.45) { c.eyeL.scale.set(1.6, 1.6, 1); c.eyeR.scale.set(1.6, 1.6, 1); }
+                else { c.eyeL.scale.set(1.5, 0.5, 1); c.eyeR.scale.set(1.5, 0.5, 1); }
+                c.eyeTimer = 0.22;
+            }
+
+            c.eyeTimer -= dt;
+            if (c.eyeTimer <= 0) {
+                const r = Math.random();
+                if (r < 0.1) { c.eyeL.scale.set(1, 0.1, 1); c.eyeR.scale.set(1, 0.1, 1); c.eyeTimer = 0.15; }
+                else if (r < 0.2) { c.eyeL.scale.set(1, 0.3, 1); c.eyeR.scale.set(1, 0.3, 1); c.eyeTimer = 2.0; }
+                else if (r < 0.3) { c.eyeL.scale.set(1.4, 1.4, 1); c.eyeR.scale.set(1.4, 1.4, 1); c.eyeTimer = 1.5; }
+                else { c.eyeL.scale.set(1, 1, 1); c.eyeR.scale.set(1, 1, 1); c.eyeTimer = Math.random() * 3 + 1; }
+            }
+
+            c.lookTimer -= dt;
+            if (c.lookTimer <= 0) {
+                if (Math.random() < 0.3) { c.lookDir.set(0, 0); }
+                else {
+                    const angle = Math.floor(Math.random() * 16) * (Math.PI / 8);
+                    c.lookDir.set(Math.cos(angle) * 0.25, Math.sin(angle) * 0.25);
+                }
+                c.lookTimer = Math.random() * 2 + 1.0;
+            }
+            const tLx = -0.7 + c.lookDir.x, tLy = 0.5 + c.lookDir.y;
+            const tRx = 0.7 + c.lookDir.x, tRy = 0.5 + c.lookDir.y;
+            c.eyeL.position.x += (tLx - c.eyeL.position.x) * 0.1; c.eyeL.position.y += (tLy - c.eyeL.position.y) * 0.1;
+            c.eyeR.position.x += (tRx - c.eyeR.position.x) * 0.1; c.eyeR.position.y += (tRy - c.eyeR.position.y) * 0.1;
+
+            if (c.blushTimer > 0) { c.blushTimer -= dt; c.blushL.visible = true; c.blushR.visible = true; }
+            else { c.blushL.visible = false; c.blushR.visible = false; }
+
+            // --- Choreographed dance: follow a formation, bounce to the tempo ---
+            if (c.dancing && !c.isDragged) {
+                const bp = reactive.beatPhase;
+                const i = c.danceIndex, n = c.danceCount;
+                const bounce = Math.abs(Math.sin((bp + i / n) * Math.PI)) * 7.0;
+                let tx, tz;
+                if (danceFormation === 'circle') {
+                    const R = 9 + n * 1.6;                        // ring grows as members join
+                    const ang = time * 0.5 + (i / n) * Math.PI * 2;
+                    tx = danceCenter.x + Math.cos(ang) * R;
+                    tz = danceCenter.z + Math.sin(ang) * R;
+                } else {
+                    tx = danceCenter.x + (i - (n - 1) / 2) * 7.5;
+                    tz = danceCenter.z + Math.sin(time * 1.2 + i * 0.7) * 6.0;
+                }
+                // Slow, eased glide into formation (frame-rate independent) so
+                // assembly reads as a gentle gather, not a snap.
+                const k = 1.0 - Math.exp(-dt * 1.6);
+                c.group.position.x += (tx - c.group.position.x) * k;
+                c.group.position.z += (tz - c.group.position.z) * k;
+                c.group.position.y = c.radius + bounce;
+                c.body.rotation.y += dt * 2.0;
+                c.face.position.y = Math.sin(time * 10 + c.group.id) * 0.05;
+                paintTrail(c.group.position.x, c.group.position.z, 4, c.colorCss);
+                if (bounce < 0.6) c.squishTimer = Math.max(c.squishTimer, 0.05);
+                let st = c.squishTimer > 0 ? 0.6 : 1.0, sq = c.squishTimer > 0 ? 1.4 : 1.0;
+                if (c.squishTimer > 0) c.squishTimer -= dt;
+                c.group.scale.x += (sq - c.group.scale.x) * 0.5;
+                c.group.scale.y += (st - c.group.scale.y) * 0.5;
+                c.group.scale.z += (sq - c.group.scale.z) * 0.5;
+                return;
+            }
+
+            if (!c.isDragged) {
+                // Beat impulse — crazy bounce, harder when louder.
+                if (reactive.beat) {
+                    const power = 22 + reactive.level * 90;
+                    c.velocity.y += power * (0.6 + Math.random() * 0.7);
+                    const ang = Math.random() * Math.PI * 2;
+                    const h = 12 + reactive.level * 80;
+                    c.velocity.x += Math.cos(ang) * h;
+                    c.velocity.z += Math.sin(ang) * h;
+                    c.squishTimer = 0.06;
+                    if (c.velocity.length() > maxVelocity) c.velocity.setLength(maxVelocity);
+                    paintTrail(c.group.position.x, c.group.position.z, 5, c.colorCss);
+                    spawnParticles(c.group.position, c.velocity, c.color, c.colorCss);
+                }
+
+                c.velocity.y += gravity * dt;
+                c.group.position.addScaledVector(c.velocity, dt);
+
+                const bounds = (arenaSize / 2) - c.radius;
+                if (Math.abs(c.group.position.x) > bounds) { c.group.position.x = Math.sign(c.group.position.x) * bounds; c.velocity.x *= -bounceFactor; }
+                if (Math.abs(c.group.position.z) > bounds) { c.group.position.z = Math.sign(c.group.position.z) * bounds; c.velocity.z *= -bounceFactor; }
+
+                c.body.rotation.z -= (c.velocity.x * dt) * 0.2; c.body.rotation.x += (c.velocity.z * dt) * 0.2;
+                c.face.position.y = Math.sin(time * 10 + c.group.id) * 0.05;
+
+                if (c.group.position.y <= floorY + c.radius) {
+                    c.group.position.y = floorY + c.radius;
+                    if (Math.abs(c.velocity.y) > 8.0 || c.velocity.lengthSq() > 20.0) {
+                        paintTrail(c.group.position.x, c.group.position.z, 5, c.colorCss);
+                        spawnParticles(c.group.position, c.velocity, c.color, c.colorCss);
+                        c.squishTimer = 0.05;
+                    }
+                    c.velocity.y *= -bounceFactor;
+                    c.velocity.x *= friction; c.velocity.z *= friction;
+                    if (Math.abs(c.velocity.y) < 1.0) { c.velocity.y = 0; c.velocity.x *= 0.8; c.velocity.z *= 0.8; }
+                    if (c.velocity.lengthSq() < 2.0) {
+                        c.idleTimer -= dt * (1.0 + reactive.level * 3.0);
+                        if (c.idleTimer <= 0) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const speed = Math.random() * 15 + 10;
+                            c.velocity.set(Math.cos(angle) * speed, Math.random() * 15 + 20, Math.sin(angle) * speed);
+                            c.idleTimer = Math.random() * 1.5 + 0.5;
+                        }
+                    }
+                }
+
+                let stretch = 1.0, squish = 1.0;
+                if (c.squishTimer > 0) { c.squishTimer -= dt; squish = 1.5; stretch = 0.5; }
+                else { const velY = Math.max(-40, Math.min(40, c.velocity.y)); stretch = 1.0 + Math.abs(velY * 0.015); squish = 1.0 / stretch; }
+                c.group.scale.x += (squish - c.group.scale.x) * 0.5;
+                c.group.scale.y += (stretch - c.group.scale.y) * 0.5;
+                c.group.scale.z += (squish - c.group.scale.z) * 0.5;
+            } else {
+                c.idleTimer = 1.5; c.eyeL.scale.set(1.5, 1.5, 1); c.eyeR.scale.set(1.5, 1.5, 1); c.eyeTimer = 0.5;
+                c.lookDir.set(0, 0); c.group.scale.set(1, 1, 1);
+            }
+        }
+
+        // --- 9. Animation loop ---
+        const clock = new THREE.Clock();
+        const reactive = new AudioReactive();
+        const _musicColor = new THREE.Color();
+        const MOVE_SPEED = 68;
+
+        // EarthBound-style layer swap state.
+        let paintPhase = 0;
+        let layerPrev = 0, layerCur = 1, layerSwapTime = 0, layerTimer = 5;
+
+        // --- Director Mode: audio-paced cinematic camera moves (isometric) ---
+        // Instead of perspective shots, Director animates the orbit params
+        // (theta / phi / target / frustum), easing toward a new "shot" each cut.
+        const SHOT_TYPES = ['orbit', 'push', 'pull', 'topDown', 'lowAngle', 'sweep'];
+        let dirShot = null, dirShotStart = 0, dirShotDur = 5;
+        const _dirCentroid = new THREE.Vector3();
+        // Params the live camera eases toward.
+        let dTheta = cameraTheta, dPhi = cameraPhi, dFrustum = frustumSize;
+        const dTarget = new THREE.Vector3().copy(cameraTarget);
+
+        function crowdCentroid(out) {
+            let x = 0, z = 0, densest = null, best = 1e9;
+            for (const c of creatures) { x += c.group.position.x; z += c.group.position.z; }
+            const n = creatures.length || 1;
+            out.set(x / n, 4, z / n);
+            // "densest area" = creature with the most neighbours near it
+            let bestCount = -1;
+            for (const c of creatures) {
+                let cnt = 0;
+                for (const o of creatures) if (o !== c && o.group.position.distanceTo(c.group.position) < 22) cnt++;
+                if (cnt > bestCount) { bestCount = cnt; densest = c; }
+            }
+            return densest;
+        }
+
+        function dirPickShot(time) {
+            const dense = crowdCentroid(_dirCentroid);
+            let t; do { t = SHOT_TYPES[Math.floor(Math.random() * SHOT_TYPES.length)]; } while (dirShot && t === dirShot.type && SHOT_TYPES.length > 1);
+            // Pacing rides the audio: louder → snappier cuts.
+            const energy = reactive.active ? Math.min(1, reactive.level * 2.2 + reactive.beatPulse * 0.3) : 0.25;
+            dirShotDur = 6.5 - energy * 4.3;           // ~2.2s loud … 6.5s calm
+            dirShotStart = time;
+            // Focus a random friend (or the densest cluster) for this cut.
+            const subj = (Math.random() < 0.6 && creatures.length) ? creatures[Math.floor(Math.random() * creatures.length)] : dense;
+            dTarget.copy(subj ? subj.group.position : _dirCentroid); dTarget.y = 6.0;
+            if (t === 'orbit')        { dTheta = cameraTheta + (Math.random() < 0.5 ? 1 : -1) * (1.2 + Math.random()); dPhi = Math.PI / 3.3; dFrustum = 62; }
+            else if (t === 'push')    { dTheta = Math.random() * Math.PI * 2;                    dPhi = Math.PI / 3.1;       dFrustum = 30; }
+            else if (t === 'pull')    { dTheta = Math.random() * Math.PI * 2;                    dPhi = Math.PI / 3.6;       dFrustum = 118; }
+            else if (t === 'topDown') { dTheta = Math.random() * Math.PI * 2;                    dPhi = 0.30;                dFrustum = 88; }
+            else if (t === 'lowAngle'){ dTheta = Math.random() * Math.PI * 2;                    dPhi = Math.PI / 2 - 0.16;  dFrustum = 48; }
+            else /* sweep */          { dTheta = cameraTheta + (Math.random() < 0.5 ? 1 : -1) * 0.8; dPhi = Math.PI / 3.3;   dFrustum = 54; }
+            dirShot = { type: t, subj };
+            // Each cut also swaps the dither method → cycles the fundamentals.
+            baseUniforms.u_ditherMode.value = Math.floor(Math.random() * 4);
+        }
+
+        function directorUpdate(time, dt) {
+            if (!dirShot || (time - dirShotStart) > dirShotDur) dirPickShot(time);
+            // Hard-cut on a strong beat once the shot has breathed for ~0.9s.
+            if (reactive.beat && reactive.beatPulse > 0.9 && reactive.level > 0.12 && (time - dirShotStart) > 0.9) dirPickShot(time);
+
+            const s = dirShot;
+            // Continuous drift for moving shots; follow a live subject.
+            if (s.type === 'orbit' || s.type === 'sweep') dTheta += dt * 0.28;
+            if (s.subj && creatures.indexOf(s.subj) !== -1) {
+                dTarget.x += (s.subj.group.position.x - dTarget.x) * 0.06;
+                dTarget.z += (s.subj.group.position.z - dTarget.z) * 0.06;
+            }
+            // Ease the live params toward the shot targets (frame-rate independent).
+            const k = 1.0 - Math.exp(-dt * 2.2);
+            cameraTheta    += (dTheta   - cameraTheta)   * k;
+            cameraPhi      += (dPhi     - cameraPhi)     * k;
+            frustumSize    += (dFrustum - frustumSize)   * k;
+            cameraTarget.x += (dTarget.x - cameraTarget.x) * k;
+            cameraTarget.y += (dTarget.y - cameraTarget.y) * k;
+            cameraTarget.z += (dTarget.z - cameraTarget.z) * k;
+            applyFrustum();
+            updateCamera();
+        }
+
+        function setDirectorMode(on) {
+            directorMode = on;
+            const lbl = document.querySelector('#director-btn .pf-label');
+            if (lbl) lbl.textContent = on ? 'Director ● ON' : 'Director Mode';
+            if (on) {
+                dirShot = null;                         // fresh shot on next frame
+                dTheta = cameraTheta; dPhi = cameraPhi; dFrustum = frustumSize; dTarget.copy(cameraTarget);
+            } else {
+                baseUniforms.u_ditherMode.value = 1;    // back to Bayer
+                applyFrustum();
+            }
+        }
+        document.getElementById('director-btn').addEventListener('click', () => setDirectorMode(!directorMode));
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.05);
+            const time = clock.getElapsedTime();
+            const now = time; // seconds
+            baseUniforms.u_time.value = time;
+
+            reactive.update(dt);
+
+            // Creature tint from pitch + loudness.
+            const hue = (reactive.pitch * 0.7 + time * 0.04) % 1.0;
+            _musicColor.setHSL(hue, 0.85, 0.6);
+            baseUniforms.u_musicTint.value.copy(_musicColor);
+            baseUniforms.u_musicAmt.value = Math.min(1.0, reactive.level * 1.7 + reactive.beatPulse * 0.35);
+
+            // Liquid: slow drift (still nudged by audio); intensity rides volume.
+            paintPhase += dt * (0.12 + reactive.level * 0.8 + reactive.beatPulse * 0.5);
+            baseUniforms.u_paintPhase.value = paintPhase;
+            baseUniforms.u_paintIntensity.value = 0.4 + Math.min(0.5, reactive.level * 1.5 + reactive.beatPulse * 0.25);
+            layerTimer -= dt;
+            if (layerTimer <= 0) {
+                layerPrev = layerCur;
+                layerCur = (layerCur + 1 + Math.floor(Math.random() * 4)) % 5;
+                layerSwapTime = time;
+                layerTimer = 7 + Math.random() * 5;
+            }
+            const blend = Math.min(1, (time - layerSwapTime) / 2.2);
+            baseUniforms.u_layerA.value = layerPrev;
+            baseUniforms.u_layerB.value = layerCur;
+            baseUniforms.u_layerBlend.value = blend;
+
+            if (directorMode) directorUpdate(time, dt);   // manual cam is event-driven
+            updateDance(now, dt);
+            creatures.forEach(c => updateCreature(c, dt, time));
+
+            // Creature-vs-creature collisions.
+            for (let i = 0; i < creatures.length; i++) {
+                for (let j = i + 1; j < creatures.length; j++) {
+                    const c1 = creatures[i], c2 = creatures[j];
+                    if (c1.dancing && c2.dancing) continue;
+                    const dist = c1.group.position.distanceTo(c2.group.position);
+                    const minDist = c1.radius + c2.radius;
+                    // Touching an active dancer recruits the other blob into the dance.
+                    if ((c1.dancing || c2.dancing) && dist < minDist + 1.5) { danceTryRecruit(c1, c2, now); continue; }
+                    if (dist < minDist) {
+                        const dir = new THREE.Vector3().subVectors(c1.group.position, c2.group.position).normalize();
+                        const overlap = minDist - dist;
+                        c1.group.position.addScaledVector(dir, overlap * 0.5);
+                        c2.group.position.addScaledVector(dir, -overlap * 0.5);
+                        const relVel = new THREE.Vector3().subVectors(c1.velocity, c2.velocity);
+                        const impulse = dir.clone().multiplyScalar(relVel.dot(dir) * 0.8);
+                        c1.velocity.sub(impulse); c2.velocity.add(impulse);
+                        c1.squishTimer = 0.08; c2.squishTimer = 0.08;
+                        c1.blushTimer = 2.5; c2.blushTimer = 2.5;
+                    }
+                }
+            }
+
+            // Voxel particles — fall, spin, and leave their own little trails.
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.velocity.y += gravity * dt; p.position.addScaledVector(p.velocity, dt);
+                p.rotation.x += dt * 5; p.rotation.y += dt * 5;
+                if (p.position.y > floorY + 0.6) {
+                    p._trailT += dt;
+                    if (p._trailT > 0.03) { p._trailT = 0; paintTrail(p.position.x, p.position.z, 1, p._trailCss); }
+                }
+                if (p.position.y <= floorY + 0.4) {
+                    p.position.y = floorY + 0.4; p.velocity.set(0, 0, 0);
+                    p.life -= dt * 3.0; p.scale.setScalar(p.life);
+                }
+                if (p.life <= 0) { scene.remove(p); particles.splice(i, 1); }
+            }
+
+            renderer.clear();
+            renderer.render(bgScene, bgCamera);
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            aspect = window.innerWidth / window.innerHeight;
+            applyFrustum();
+            renderer.setSize(RENDER_H * aspect, RENDER_H);
+        });
+
+        animate();
+    </script>
+
+    <script>
+        // --- 10. UI chrome, windowed radio, boot ---
+        (function bootUI() {
+            // Early-OS boxes: white fill inside a thick BLACK rounded pixel
+            // border (classic Macintosh button silhouette). No gloss/smudge/
+            // canvas shadow — CSS supplies the solid offset shadow.
+            const osBox = { fill: '#ffffff', fillHi: '#ffffff', fillLo: '#ffffff',
+                            outline: '#111111', frame: '#111111', frameHi: '#111111', frameLo: '#111111',
+                            noGloss: true, noSmudge: true, noShadow: true };
+            // CRT terminal panel: near-black phosphor screen in the same black frame.
+            const termBox = { ...osBox, fill: '#0a0f0a', fillHi: '#0a0f0a', fillLo: '#0a0f0a' };
+
+            new PixelButton(document.getElementById('director-btn'), { ...osBox, r: 10, border: 3 });
+            new PixelButton(document.getElementById('spawn-btn'), { ...osBox, r: 10, border: 3 });
+            new PixelButton(document.getElementById('radio-reopen'), { ...osBox, r: 8, border: 3 });
+
+            const radio = new Radio(window.audioEngine);
+            radio.mount(document.getElementById('radio-body'));
+            document.querySelectorAll('#radio-body button').forEach(b =>
+                new PixelButton(b, { ...osBox, r: 8, border: 3 }));
+            window.radio = radio;
+
+            // ---- Windows-style window manager for the radio ----
+            const win = document.getElementById('radio-win');
+            const bar = win.querySelector('.win-bar');
+            const body = win.querySelector('.win-body');
+            const rez = win.querySelector('.win-resize');
+            const reopen = document.getElementById('radio-reopen');
+
+            let dragging = false, resizing = false, ox = 0, oy = 0, barH = 0;
+
+            bar.addEventListener('mousedown', (e) => {
+                if (e.target.closest('.win-controls')) return;
+                const r = win.getBoundingClientRect();
+                win.style.top = r.top + 'px'; win.style.left = r.left + 'px';
+                win.style.bottom = 'auto';
+                ox = e.clientX - r.left; oy = e.clientY - r.top;
+                dragging = true; win.classList.add('dragging');
+                e.preventDefault();
+            });
+            rez.addEventListener('mousedown', (e) => {
+                barH = bar.offsetHeight; resizing = true;
+                e.preventDefault(); e.stopPropagation();
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (dragging) {
+                    win.style.left = Math.max(0, Math.min(window.innerWidth - 80, e.clientX - ox)) + 'px';
+                    win.style.top  = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - oy)) + 'px';
+                } else if (resizing) {
+                    const r = win.getBoundingClientRect();
+                    win.style.width = Math.max(240, e.clientX - r.left) + 'px';
+                    body.style.height = Math.max(60, e.clientY - r.top - barH - 14) + 'px';
+                }
+            });
+            window.addEventListener('mouseup', () => { dragging = false; resizing = false; win.classList.remove('dragging'); });
+
+            win.querySelector('.win-min').addEventListener('click', () => win.classList.toggle('min'));
+            win.querySelector('.win-close').addEventListener('click', () => { win.style.display = 'none'; reopen.style.display = 'block'; });
+            reopen.addEventListener('click', () => { win.classList.remove('min'); win.style.display = 'flex'; reopen.style.display = 'none'; });
+        })();
+    </script>
+</body>
+</html>
