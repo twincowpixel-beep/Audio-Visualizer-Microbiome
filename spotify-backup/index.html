@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- The login code sits in the address bar for a moment; never leak it. -->
+    <meta name="referrer" content="no-referrer">
+    <!-- This page holds a Spotify login, so it may only talk to Spotify. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>Spotify Backup</title>
+    <style>
+        @font-face {
+            font-family: "Saturno";
+            src: url("fonts/saturno.ttf") format("truetype");
+            font-display: swap;
+        }
+
+        /* House style, lifted from AudioBiome / Radio Jungle: 1-bit early-OS
+           page, PixelFrame/PixelButton chrome painted in JS (js/pixel-frame.js)
+           in soft muted hues, Saturno pixel type on the chrome, green-phosphor
+           CRT accents for anything that reads out like a terminal.
+           Sentences are set in the system font instead: whole paragraphs of
+           Saturno are a puzzle, and this page has to be easy to follow. */
+        :root {
+            --os-white:   #ffffff;
+            --os-black:   #111111;
+            --term-bg:    #0a0f0a;
+            --term-green: #33ff66;
+            --term-dim:   #1d8f44;
+            --muted:      #5a5a5a;
+            --font-pixel: "Saturno", "JetBrains Mono", "Menlo", monospace;
+            --font-text:  system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        [hidden] { display: none !important; }
+
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            margin: 0; min-height: 100vh;
+            background-color: var(--os-white);
+            /* faint 1-bit dither so the page isn't a flat void */
+            background-image: radial-gradient(#d6d6d6 1px, transparent 1px);
+            background-size: 6px 6px;
+            color: var(--os-black);
+            font: 16px/1.55 var(--font-text);
+        }
+        a { color: inherit; }
+        /* Everything set in the pixel face: crisp, never smoothed. */
+        .eb-btn, .win-title, .win-ver, .steps li, .crt-lines {
+            font-family: var(--font-pixel);
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        /* Small-text legibility: the pixel face is thin below ~14px, so every
+           glyph is stamped twice 1px apart (same trick as Radio Jungle's .pixel-bold). */
+        .steps li, .win-title { text-shadow: 1px 0 0 currentColor; }
+
+        /* ===== Window (STANDARD UI PANEL TEMPLATE) ======================
+           The frame is a PixelFrame canvas; the element itself stays
+           transparent and content sits above it at z-index 1. */
+        .win {
+            position: relative;
+            width: min(560px, calc(100vw - 32px));
+            margin: 40px auto 24px;
+            background: transparent;
+            display: flex; flex-direction: column;
+        }
+        .win-bar {
+            position: relative; z-index: 1;
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 12px 18px 4px;
+        }
+        .win-title { margin: 0; font: 14px var(--font-pixel); letter-spacing: 0.14em; }
+        .win-ver { font: 12px var(--font-pixel); color: var(--muted); }
+        .win-body { position: relative; z-index: 1; padding: 8px 22px 24px; }
+
+        section > :first-child { margin-top: 6px; }
+        .lead { font-size: 19px; font-weight: 600; line-height: 1.4; margin: 14px 0; }
+        .small { font-size: 14px; color: var(--muted); line-height: 1.55; }
+
+        /* ===== Buttons: the house .eb-btn pill ========================= */
+        .eb-btn {
+            position: relative; background: transparent; border: none;
+            padding: 12px 20px; color: var(--os-black);
+            font: 16px var(--font-pixel); letter-spacing: 0.06em;
+            cursor: pointer; overflow: visible;
+            min-height: 48px;   /* thumb-sized */
+            filter: drop-shadow(4px 4px 0 var(--os-black));
+        }
+        .eb-btn > * { position: relative; z-index: 1; }
+        .eb-btn:hover { filter: drop-shadow(4px 4px 0 var(--os-black)) invert(0.06); }
+        .eb-btn:active { transform: translate(2px, 2px); filter: drop-shadow(2px 2px 0 var(--os-black)); }
+        .eb-btn:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 6px; }
+        .eb-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+        .eb-btn.big { font-size: 19px; padding: 16px 26px; min-height: 60px; }
+        .eb-btn.slim { font-size: 14px; padding: 8px 14px; min-height: 40px; }
+        .row { display: flex; flex-wrap: wrap; gap: 16px 18px; align-items: center; margin: 18px 0 6px; }
+
+        /* ===== Step pills ============================================= */
+        .steps {
+            list-style: none; margin: 0 0 6px; padding: 0;
+            display: flex; flex-wrap: wrap; gap: 8px;
+        }
+        .steps li {
+            padding: 3px 9px; border: 2px solid var(--os-black); background: var(--os-white);
+            font-size: 13px; letter-spacing: 0.06em; color: var(--muted);
+        }
+        .steps li.active { background: var(--os-black); color: var(--os-white); }
+        .steps li.past { color: var(--os-black); }
+
+        /* ===== Notice (errors / info) — PixelFrame-framed =============== */
+        .notice { position: relative; padding: 14px 18px; margin: 14px 0; }
+        .notice > * { position: relative; z-index: 1; }
+        .notice p { margin: 0; font-size: 16px; line-height: 1.5; }
+
+        /* ===== Checkbox list ========================================== */
+        .checks { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 4px; }
+        .checks label {
+            display: grid; grid-template-columns: 28px 1fr; column-gap: 10px; align-items: start;
+            cursor: pointer; font-size: 17px; line-height: 1.4;
+        }
+        .checks input[type=checkbox] {
+            width: 22px; height: 22px; margin: 1px 0 0; cursor: pointer; accent-color: #b07a2e;
+        }
+        .checks .hint { grid-column: 2; font-size: 14px; color: var(--muted); line-height: 1.45; }
+
+        /* ===== Progress: chunky pixel bar (Radio Jungle scope bands) ==== */
+        .bar {
+            height: 14px; background: #d8dae0; border: 2px solid #101014;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 3px 3px 0 var(--os-black);
+            overflow: hidden; margin: 6px 0 10px;
+        }
+        .bar i {
+            display: block; height: 100%; width: 0%;
+            background: linear-gradient(#6dffa0, #1d8f44);
+            transition: width 0.2s steps(4);
+        }
+        /* Unknown total: marching dither stripes instead of a fake percentage. */
+        .bar.unknown i {
+            width: 100% !important;
+            background: repeating-linear-gradient(90deg, #6dffa0 0 8px, #1d8f44 8px 16px);
+            animation: march 0.6s steps(4) infinite;
+        }
+        @keyframes march { to { background-position: 16px 0; } }
+        @media (prefers-reduced-motion: reduce) { .bar.unknown i { animation: none; } .bar i { transition: none; } }
+
+        /* ===== CRT readout: green phosphor terminal panel ================ */
+        .crt { position: relative; margin: 14px 0 18px; padding: 10px 12px; }
+        .crt-lines {
+            position: relative; z-index: 1;
+            height: 150px; overflow-y: auto;
+            color: var(--term-green);
+            text-shadow: 0 0 4px rgba(51,255,102,0.45);
+            font: 13px/1.6 var(--font-pixel); letter-spacing: 0.05em;
+            word-break: break-word;
+        }
+        .crt::after {   /* faint scanlines */
+            content: ""; position: absolute; inset: 4px; z-index: 2; pointer-events: none;
+            background: repeating-linear-gradient(to bottom, rgba(51,255,102,0.06) 0 1px, transparent 1px 3px);
+        }
+        .crt-lines div::before { content: "> "; color: var(--term-dim); }
+
+        /* ===== Done screen ============================================ */
+        .counts { list-style: none; margin: 4px 0 18px; padding: 0; font-size: 17px; }
+        .counts li { padding: 3px 0; }
+        .counts li::before { content: "\2713  "; color: var(--term-dim); }
+        .warnings { font-size: 14px; line-height: 1.5; margin: 18px 0 4px; color: #333; }
+        .warnings > div { font-weight: 600; }
+        .warnings ul { margin: 6px 0 0; padding-left: 1.2em; }
+        .warnings li { margin: 4px 0; }
+
+        /* ===== Owner setup ============================================ */
+        .setup-list { padding-left: 1.4em; margin: 10px 0; }
+        .setup-list li { margin: 0 0 14px; font-size: 16px; line-height: 1.5; }
+        .field-row { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; margin-top: 8px; }
+        code, .field {
+            font: 13px/1.4 "JetBrains Mono", "Menlo", "Consolas", monospace; letter-spacing: 0;
+            border: 2px solid var(--os-black); background: var(--os-white);
+            padding: 8px 10px; word-break: break-all;
+        }
+        code { display: inline-block; max-width: 100%; }
+        .field { flex: 1 1 220px; min-width: 0; min-height: 40px; box-sizing: border-box; border-radius: 0; }
+        .field:focus { outline: 3px dashed var(--os-black); outline-offset: 2px; }
+
+        .footer { text-align: center; font-size: 13px; color: var(--muted); margin: 0 16px 32px; }
+
+        @media (max-width: 520px) {
+            .win { margin-top: 16px; }
+            .win-body { padding: 6px 16px 20px; }
+            .lead { font-size: 18px; }
+            .row .eb-btn { flex: 1 1 100%; }
+        }
+    </style>
+</head>
+<body>
+    <main id="app" class="win" aria-labelledby="app-title">
+        <div class="win-bar">
+            <h1 id="app-title" class="win-title">SPOTIFY BACKUP</h1>
+            <span class="win-ver">v1</span>
+        </div>
+        <div class="win-body">
+            <ol id="steps" class="steps" aria-label="Progress">
+                <li data-step="login">1 Log in</li>
+                <li data-step="choose">2 Choose</li>
+                <li data-step="run">3 Save</li>
+                <li data-step="done">4 Download</li>
+            </ol>
+
+            <div id="notice" class="notice" role="alert" hidden><p id="notice-text"></p></div>
+
+            <!-- Owner-only: shown until a Client ID exists, or with ?setup -->
+            <section id="step-setup" hidden>
+                <p class="lead">One-time setup</p>
+                <p class="small">Only the person hosting this page does this. Friends never see it.</p>
+                <ol class="setup-list">
+                    <li>Open <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> and pick your app (your AudioBiome one is fine).</li>
+                    <li>In <b>Settings &rarr; Redirect URIs</b>, add exactly this address, then Save:
+                        <div class="field-row"><code id="redirect-uri"></code><button id="copy-btn" class="eb-btn slim" type="button">Copy</button></div>
+                    </li>
+                    <li>Under <b>APIs used</b>, make sure <b>Web API</b> is ticked.</li>
+                    <li>Paste the app's <b>Client ID</b> here:
+                        <div class="field-row">
+                            <input id="client-id" class="field" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="32 letters and numbers" aria-label="Spotify Client ID">
+                            <button id="save-id-btn" class="eb-btn slim" type="button">Save</button>
+                        </div>
+                    </li>
+                    <li>In <b>User Management</b>, add each friend's name and the email of their Spotify account. Spotify allows 5 people per app, you included.</li>
+                </ol>
+            </section>
+
+            <section id="step-login" hidden>
+                <p class="lead">Save a written copy of all your playlists and liked songs, in case anything ever happens to your Spotify account.</p>
+                <div class="row"><button id="login-btn" class="eb-btn big" type="button">Log in with Spotify</button></div>
+                <p class="small">Spotify will ask if this page can <i>see</i> your playlists and library. It can't change anything, and your music list goes straight to this device &mdash; nothing is stored anywhere else.</p>
+            </section>
+
+            <section id="step-choose" hidden>
+                <p class="lead">Hi, <b id="who">there</b>! What should we save?</p>
+                <div class="checks">
+                    <label><input type="checkbox" id="opt-liked" checked> Liked songs</label>
+                    <label><input type="checkbox" id="opt-mine" checked> My playlists
+                        <span class="hint">Ones you made, plus collaborative ones.</span></label>
+                    <label><input type="checkbox" id="opt-followed" checked> Playlists I follow
+                        <span class="hint">Spotify usually only shares their names and links, not their songs.</span></label>
+                    <label><input type="checkbox" id="opt-albums" checked> Saved albums</label>
+                    <label><input type="checkbox" id="opt-artists" checked> Artists I follow</label>
+                    <label><input type="checkbox" id="opt-covers" checked> Playlist cover pictures</label>
+                </div>
+                <div class="row"><button id="start-btn" class="eb-btn big" type="button">Start backup</button></div>
+                <div class="row"><button id="logout-btn" class="eb-btn slim" type="button">Log out</button></div>
+            </section>
+
+            <section id="step-run" hidden>
+                <p class="lead" id="run-label">Getting ready&hellip;</p>
+                <div id="bar" class="bar unknown" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100"><i id="bar-fill"></i></div>
+                <p class="small" id="run-part">Please keep this page open until it's finished.</p>
+                <div id="crt" class="crt"><div id="log" class="crt-lines" aria-live="polite"></div></div>
+                <div class="row"><button id="stop-btn" class="eb-btn slim" type="button">Stop</button></div>
+            </section>
+
+            <section id="step-done" hidden>
+                <p class="lead" id="done-title">All done!</p>
+                <ul id="done-counts" class="counts"></ul>
+                <div class="row">
+                    <button id="download-btn" class="eb-btn big" type="button">Download my backup</button>
+                    <button id="print-btn" class="eb-btn" type="button">Open printable list</button>
+                </div>
+                <p class="small">The download is a .zip file. Double-click it to open the folder inside, and start with <b>READ ME FIRST</b>. Keep a copy somewhere safe: email it to yourself, or put it on a USB stick or in Google Drive.</p>
+                <div id="done-warnings" class="warnings" hidden></div>
+                <div class="row">
+                    <button id="again-btn" class="eb-btn slim" type="button">Back up again</button>
+                    <button id="logout2-btn" class="eb-btn slim" type="button">Log out</button>
+                </div>
+            </section>
+        </div>
+    </main>
+    <p class="footer">Runs entirely in your browser &middot; read-only access &middot; no server, no tracking</p>
+
+    <script src="js/config.js"></script>
+    <script src="js/pixel-frame.js"></script>
+    <script src="js/spotify-auth.js"></script>
+    <script src="js/spotify-api.js"></script>
+    <script src="js/backup.js"></script>
+    <script src="js/exporters.js"></script>
+    <script src="js/zip.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
