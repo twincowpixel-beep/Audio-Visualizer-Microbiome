@@ -180,6 +180,9 @@
         code { display: inline-block; max-width: 100%; }
         .field { flex: 1 1 220px; min-width: 0; min-height: 40px; box-sizing: border-box; border-radius: 0; }
         .field:focus { outline: 3px dashed var(--os-black); outline-offset: 2px; }
+        .field-label { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 0; font-weight: 600; }
+        .field-label .field { font: 17px/1.3 var(--font-text); flex: none; width: 100%; }
+        .mail-link { font-weight: 600; font-size: 17px; }
 
         .footer { text-align: center; font-size: 13px; color: var(--muted); margin: 0 16px 32px; }
 
@@ -231,6 +234,37 @@
                 <p class="lead">Save a written copy of all your playlists and liked songs, in case anything ever happens to your Spotify account.</p>
                 <div class="row"><button id="login-btn" class="eb-btn big" type="button">Log in with Spotify</button></div>
                 <p class="small">Spotify will ask if this page can <i>see</i> your playlists and library. It can't change anything, and your music list goes straight to this device &mdash; nothing is stored anywhere else.</p>
+                <p class="small">First time here? Spotify only lets people who've been added use this page.</p>
+                <div class="row"><button id="request-btn" class="eb-btn slim" type="button">Request access</button></div>
+            </section>
+
+            <!-- A Netlify Form: Netlify finds it when the site is deployed and
+                 emails each request to the owner. app.js sends it with fetch
+                 and falls back to a ready-written email if that fails. -->
+            <section id="step-request" hidden>
+                <p class="lead">Request access</p>
+                <form id="request-form" name="request-access" method="POST" data-netlify="true" netlify-honeypot="bot-field" novalidate>
+                    <p class="small">Spotify only allows a few people per app, and the owner has to add each one by hand. Fill this in and they'll get an email asking them to add you. Use the email address you log in to Spotify with.</p>
+                    <input type="hidden" name="form-name" value="request-access">
+                    <input type="hidden" name="subject" value="Spotify Backup: access request">
+                    <input type="hidden" name="what-to-do" value="">
+                    <p hidden><label>Leave this empty: <input name="bot-field" tabindex="-1" autocomplete="off"></label></p>
+                    <label class="field-label">Your name
+                        <input id="req-name" class="field" type="text" name="name" autocomplete="name" maxlength="100" required>
+                    </label>
+                    <label class="field-label">Email of your Spotify account
+                        <input id="req-email" class="field" type="email" name="email" autocomplete="email" maxlength="200" required>
+                    </label>
+                    <div class="row">
+                        <button id="send-request-btn" class="eb-btn big" type="submit">Send request</button>
+                        <button id="request-back-btn" class="eb-btn slim" type="button">Back</button>
+                    </div>
+                </form>
+                <div id="request-done" hidden>
+                    <p id="request-done-text"></p>
+                    <p id="request-fallback" hidden><a id="request-mailto" class="mail-link" href="#">Open the email</a></p>
+                    <div class="row"><button id="request-done-back-btn" class="eb-btn slim" type="button">Back to log in</button></div>
+                </div>
             </section>
 
             <section id="step-choose" hidden>

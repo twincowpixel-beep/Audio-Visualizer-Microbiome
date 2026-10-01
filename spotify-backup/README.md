@@ -26,6 +26,19 @@ Then open **http://127.0.0.1:8080/**. Use `127.0.0.1`, not `localhost`: Spotify 
 
 **For friends**, host the `spotify-backup/` folder anywhere that serves HTTPS: Netlify, Cloudflare Pages or GitHub Pages. You can deploy it the same way as `blob-playground/`. Add the hosted address to Redirect URIs, then send friends the link.
 
+## Putting it on Netlify (drag and drop)
+
+1. Zip the *contents* of this folder (`index.html` must be at the top of the zip), leaving out `tests/`. Or just drag the folder itself.
+2. Go to [app.netlify.com/drop](https://app.netlify.com/drop) and drop it in. Note the address you get, e.g. `https://spotify-backup-xyz.netlify.app`.
+3. In the Spotify dashboard → your app → **Settings → Redirect URIs**, add that address *with a slash on the end*, then Save.
+4. **Request access form** (Netlify Forms):
+   - Netlify → your site → **Forms**: if it says form detection is off, click **Enable form detection**, then drop the zip in again (Deploys tab) so Netlify finds the form.
+   - **Site configuration → Notifications → Emails and webhooks → Form submission notifications → Add notification → Email**: enter your address and pick the `request-access` form.
+   - If the form isn't set up, friends instead get a ready-written email to `OWNER_EMAIL` from `js/config.js`.
+5. When a request arrives, add that person in the Spotify dashboard → **User Management** (name + their Spotify email).
+
+To update the site later, drop a new zip on the site's **Deploys** tab (not on /drop, which makes a new site with a new address).
+
 ## If login doesn't work
 
 These are also the most likely reasons the Spotify login never worked in AudioBiome:

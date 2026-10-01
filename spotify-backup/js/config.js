@@ -12,9 +12,15 @@
    trailing slash included. The setup box shows the address it will send.
 
    OWNER_NAME: shown to friends in error messages ("ask Sam to add you").
+
+   OWNER_EMAIL: where "Request access" sends people. The form is a Netlify
+   Form (Netlify emails you each request once notifications are switched
+   on); this address is the backup if that fails — friends get a
+   ready-written email to send you instead. It is visible in the page.
    ============================================================ */
 window.SPOTIFY_BACKUP_CONFIG = {
-  CLIENT_ID: "",
+  CLIENT_ID: "d16bf9da788640968a52555e29211ec8",
   REDIRECT_URI: "",
   OWNER_NAME: "",
+  OWNER_EMAIL: "zanderchristoff01@gmail.com",
 };

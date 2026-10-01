@@ -11,6 +11,7 @@
   const $ = id => document.getElementById(id);
   const cfg = window.SPOTIFY_BACKUP_CONFIG || {};
   const OWNER = (cfg.OWNER_NAME || "").trim() || "the person who set this page up";
+  const OWNER_EMAIL = (cfg.OWNER_EMAIL || "").trim();
   const { AuthError } = SpotifyAuth;
 
   // ===== House-style chrome ============================================
@@ -43,6 +44,7 @@
     "login-btn": 0.38, "start-btn": 0.33, "download-btn": 0.58, "print-btn": 0.11,
     "stop-btn": 0.02, "logout-btn": 0.02, "logout2-btn": 0.02, "again-btn": 0.72,
     "copy-btn": 0.64, "save-id-btn": 0.33,
+    "request-btn": 0.88, "send-request-btn": 0.88, "request-back-btn": 0.72, "request-done-back-btn": 0.72,
   };
   const NOTICE_HUE = { error: 0.02, info: 0.11, ok: 0.33 };
   let noticeFrame = null;
@@ -65,12 +67,12 @@
   }
 
   // ===== Steps & notices ===============================================
-  const SECTIONS = ["setup", "login", "choose", "run", "done"];
+  const SECTIONS = ["setup", "login", "request", "choose", "run", "done"];
   const ORDER = ["login", "choose", "run", "done"];
   function show(step) {
     SECTIONS.forEach(s => { $("step-" + s).hidden = s !== step; });
     $("steps").hidden = step === "setup";
-    const at = ORDER.indexOf(step);
+    const at = ORDER.indexOf(step === "request" ? "login" : step);
     document.querySelectorAll("#steps li").forEach(li => {
       const i = ORDER.indexOf(li.dataset.step);
       li.classList.toggle("active", i === at);
@@ -94,8 +96,8 @@
     if (e instanceof AuthError) return e.message;
     if (e.name === "ApiError") {
       if (e.status === 403 && /\/v1\/me$/.test(e.url || "")) {
-        return "Spotify won't let this account use the backup page yet. Ask " + OWNER + " to add the email " +
-               "address of your Spotify account under User Management in the Spotify developer dashboard. " +
+        return "This Spotify account hasn't been added to the backup page yet. Press “Request access” below " +
+               "and " + OWNER + " will get an email asking to add you — then come back and log in again. " +
                "(If you ARE the owner: check your Spotify Premium is active — Spotify switches developer apps off without it.)";
       }
       if (e.status === 429) {
@@ -164,6 +166,70 @@
              "To give friends a link that works without this step, put the Client ID in js/config.js.", "ok");
       show("login");
     });
+  }
+
+  // ===== Request access ================================================
+  function showRequest() {
+    clearNotice();
+    $("request-form").hidden = false;
+    $("request-done").hidden = true;
+    show("request");
+    $("req-name").focus();
+  }
+
+  function requestMailto(name, email) {
+    const body = "Hi! Please add me to the Spotify Backup page.\n\nName: " + name +
+                 "\nSpotify email: " + email +
+                 "\n\n(Add me at developer.spotify.com/dashboard → your app → User Management.)";
+    return "mailto:" + OWNER_EMAIL + "?subject=" + encodeURIComponent("Spotify Backup: access request from " + name) +
+           "&body=" + encodeURIComponent(body);
+  }
+
+  async function sendRequest(e) {
+    e.preventDefault();
+    const name = $("req-name").value.trim();
+    const email = $("req-email").value.trim();
+    if (!name) { notice("Please type your name.", "info"); $("req-name").focus(); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      notice("Please type the email address you use for Spotify.", "info"); $("req-email").focus(); return;
+    }
+    clearNotice();
+    const btn = $("send-request-btn");
+    btn.disabled = true;
+    const form = new URLSearchParams(new FormData($("request-form")));
+    form.set("name", name);
+    form.set("email", email);
+    // Netlify uses a field called "subject" as the notification email's subject.
+    form.set("subject", "Spotify Backup: access request from " + name);
+    form.set("what-to-do", "Add this person at developer.spotify.com/dashboard → your app → User Management (name + this email).");
+    let sent = false;
+    try {
+      const res = await fetch("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+      sent = res.ok;
+    } catch (err) { /* offline, or not on Netlify: fall back to email */ }
+    btn.disabled = false;
+
+    $("request-form").hidden = true;
+    $("request-done").hidden = false;
+    const who = cfg.OWNER_NAME ? OWNER : "The owner";
+    if (sent) {
+      $("request-done-text").textContent = "Request sent! " + who + " will add " + email + " to the app. " +
+        "Spotify doesn't send a message when that's done, so just come back and try logging in later.";
+      $("request-fallback").hidden = true;
+    } else if (OWNER_EMAIL) {
+      $("request-done-text").textContent = "The request form isn't working right now, so here's an email with your " +
+        "details already filled in. Press the link below, then press Send. (Or write to " + OWNER_EMAIL + " yourself.)";
+      $("request-mailto").href = requestMailto(name, email);
+      $("request-fallback").hidden = false;
+    } else {
+      $("request-done-text").textContent = "The request form isn't working right now. Please ask " + OWNER +
+        " directly to add " + email + " to the app.";
+      $("request-fallback").hidden = true;
+    }
   }
 
   // ===== The backup run =================================================
@@ -354,6 +420,10 @@
       try { await SpotifyAuth.login(); } catch (e) { notice(friendly(e)); }
     });
     $("start-btn").addEventListener("click", start);
+    $("request-btn").addEventListener("click", showRequest);
+    $("request-form").addEventListener("submit", sendRequest);
+    $("request-back-btn").addEventListener("click", () => { clearNotice(); show("login"); });
+    $("request-done-back-btn").addEventListener("click", () => { clearNotice(); show("login"); });
     $("stop-btn").addEventListener("click", () => {
       if (controller) { controller.abort(); $("stop-btn").disabled = true; logLine("Stopping…"); }
     });
