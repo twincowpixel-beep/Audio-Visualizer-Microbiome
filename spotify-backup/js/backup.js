@@ -125,12 +125,12 @@
     Object.assign(data, {
       format: "spotify-backup", formatVersion: 1,
       createdAt: new Date().toISOString(), complete: false,
-      account: null, likedSongs: null, playlists: null, albums: null, artists: null,
+      account: null, likedSongs: null, playlists: null, albums: null, artists: null, listening: null,
       warnings: [], covers: [], thumbs: [],
     });
 
     const wantPlaylists = opts.myPlaylists || opts.followedPlaylists;
-    const parts = [opts.liked, wantPlaylists, opts.albums, opts.artists].filter(Boolean).length || 1;
+    const parts = [opts.liked, wantPlaylists, opts.albums, opts.artists, opts.stats].filter(Boolean).length || 1;
     let part = 0;
 
     const me = await api.get("/me");
@@ -311,6 +311,27 @@
       }
     }
 
+    // ---- Top picks snapshot (for the viewer's Stats tab) ----------------
+    // What Spotify says your top artists and songs are today, kept so the
+    // backup's own stats page still has them later.
+    if (opts.stats && window.LiveStats) {
+      part++;
+      status({ part, parts, label: "Your top picks", done: 0, total: null });
+      try {
+        const ranges = {};
+        for (const r of Object.keys(LiveStats.RANGES)) ranges[r] = await LiveStats.fetchTop(api, r);
+        let recent = null;
+        try { recent = await LiveStats.fetchRecent(api); } catch (e) { if (!isRefusal(e)) throw e; }
+        data.listening = { capturedAt: new Date().toISOString(), ranges, recent };
+        log("Top picks: saved for 3 time ranges.");
+      } catch (e) {
+        if (!isRefusal(e)) throw e;
+        data.warnings.push("Top picks: Spotify wouldn't share them (" + e.status + "). If you logged in before the " +
+          "stats feature existed, log out and in again to allow it.");
+        log("Top picks: Spotify said no (" + e.status + ") \u2014 skipped.");
+      }
+    }
+
     // ---- Cover pictures -------------------------------------------------
     // Spotify's image links will die with the account, so keep the pictures.
     // Not essential: any failure just leaves the link in the backup.
@@ -348,6 +369,9 @@
       ];
       songs.forEach(t => t.albumImage && urls.add(t.albumImage));
       ((data.albums && data.albums.items) || []).forEach(a => a.imageUrl && urls.add(a.imageUrl));
+      if (data.listening) {
+        Object.values(data.listening.ranges).forEach(r => [...r.artists, ...r.tracks].forEach(x => x.image && urls.add(x.image)));
+      }
       const list = [...urls];
       let next = 0, done = 0, failed = 0;
       const worker = async () => {

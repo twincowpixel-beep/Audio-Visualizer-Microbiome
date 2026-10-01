@@ -363,13 +363,67 @@
       sections.join("") + "</body></html>\n";
   }
 
+  // ---------- the interactive viewer ("My Music.html") -------------------
+  // The page is self-contained: these files' text is pasted into it. The
+  // order matters — the site's Content-Security-Policy allows this exact
+  // script by its SHA-256 (see tools/csp-hash.js), so any change to these
+  // files means re-running that tool.
+  const VIEWER_ASSETS = {
+    css: ["css/shared.css", "css/viewer.css"],
+    js: ["js/pixel-frame.js", "js/house.js", "js/history.js", "js/charts.js", "js/viewer-runtime.js"],
+  };
+  /** The one inline <script> of the viewer, from the files' texts. */
+  function viewerScript(jsTexts) {
+    return "\n" + jsTexts.join("\n;\n").replace(/<\/(script)/gi, "<\\/$1") + "\n";
+  }
+
+  function viewerHtml(data, { fontDataUrl = "", assets, theme = "dots" } = {}) {
+    // Pictures become CSS classes so each album's art is stored once.
+    const art = {}, covers = {};
+    let picCss = "";
+    (data.thumbs || []).forEach((t, i) => {
+      art[t.url] = "a" + i;
+      picCss += ".a" + i + "{background-image:url(" + imageDataUrl(t.type, t.bytes) + ")}\n";
+    });
+    (data.covers || []).forEach((c, i) => {
+      covers[c.playlistId] = "c" + i;
+      picCss += ".c" + i + "{background-image:url(" + imageDataUrl(c.type, c.bytes) + ")}\n";
+    });
+    const view = Object.assign({}, data, { pictures: { art, covers }, theme });
+    delete view.covers;
+    delete view.thumbs;
+    if (view.playlists) {
+      view.playlists = Object.assign({}, view.playlists, {
+        items: view.playlists.items.map(p => Object.assign({}, p, { descriptionText: cleanDescription(p.description) })),
+      });
+    }
+    // Safe inside <script>: no "<" can close the tag early.
+    const json = JSON.stringify(view).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+    const fontFace = fontDataUrl
+      ? "@font-face{font-family:\"Saturno\";src:url(" + fontDataUrl + ") format(\"truetype\");}\n" : "";
+    return "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n" +
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
+      // Works offline and talks to nothing: links open Spotify, nothing else leaves the page.
+      "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; " +
+      "style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'\">\n" +
+      "<title>My Music — Spotify backup " + escapeHtml(isoDay(data.createdAt)) + "</title>\n" +
+      "<style>\n" + fontFace + assets.css.join("\n") + "\n" + picCss + "</style>\n</head>\n<body>\n" +
+      "<noscript><p style=\"margin:24px\">This page needs JavaScript to show your music. Everything is also in the " +
+      ".txt files and the Spreadsheets folder next to it.</p></noscript>\n" +
+      "<script type=\"application/json\" id=\"music-data\">" + json + "</script>\n" +
+      "<script>" + viewerScript(assets.js) + "</script>\n</body></html>\n";
+  }
+
   // ---------- the whole backup ------------------------------------------
   function coverExt(type) {
     return /png/i.test(type) ? ".png" : /webp/i.test(type) ? ".webp" : ".jpg";
   }
 
   /** Returns { root, files: [{ path, data }] } ready for Zip.makeZip. */
-  function buildFiles(data, { fontDataUrl = "" } = {}) {
+  /** viewerAssets: { css: [text], js: [text] } in VIEWER_ASSETS order. Without
+      them (e.g. the files couldn't be loaded) My Music.html falls back to the
+      simple static page. */
+  function buildFiles(data, { fontDataUrl = "", viewerAssets = null, theme = "dots" } = {}) {
     const root = safeName("Spotify Backup - " + (data.account ? data.account.name : "") + " - " +
                           localDay(new Date(data.createdAt)));
     const files = [];
@@ -441,12 +495,14 @@
 
     files.unshift(
       { path: root + "/READ ME FIRST.txt", data: readmeText(data, counts) },
-      { path: root + "/My Music.html", data: printableHtml(data, { fontDataUrl }) },
+      { path: root + "/My Music.html", data: viewerAssets
+          ? viewerHtml(data, { fontDataUrl, assets: viewerAssets, theme })
+          : printableHtml(data, { fontDataUrl }) },
     );
     return { root, files, counts };
   }
 
   window.Exporters = {
-    buildFiles, printableHtml, toCsv, csvCell, safeName, fmtLength, cleanDescription, trackLine, localDay,
+    buildFiles, printableHtml, viewerHtml, viewerScript, VIEWER_ASSETS, toCsv, csvCell, safeName, fmtLength, cleanDescription, trackLine, localDay,
   };
 })();

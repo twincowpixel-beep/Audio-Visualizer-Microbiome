@@ -6,94 +6,16 @@
     <!-- The login code sits in the address bar for a moment; never leak it. -->
     <meta name="referrer" content="no-referrer">
     <!-- This page holds a Spotify login, so it may only talk to Spotify. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-S3rAXUPJh+eA7r9e+yirurT68FB1l1Bk52tiAS5PXgI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Spotify Backup</title>
+    <link rel="stylesheet" href="css/shared.css">
     <style>
+        /* House look shared with the backup viewer: css/shared.css */
         @font-face {
             font-family: "Saturno";
             src: url("fonts/saturno.ttf") format("truetype");
             font-display: swap;
         }
-
-        /* House style, lifted from AudioBiome / Radio Jungle: 1-bit early-OS
-           page, PixelFrame/PixelButton chrome painted in JS (js/pixel-frame.js)
-           in soft muted hues, Saturno pixel type on the chrome, green-phosphor
-           CRT accents for anything that reads out like a terminal.
-           Sentences are set in the system font instead: whole paragraphs of
-           Saturno are a puzzle, and this page has to be easy to follow. */
-        :root {
-            --os-white:   #ffffff;
-            --os-black:   #111111;
-            --term-bg:    #0a0f0a;
-            --term-green: #33ff66;
-            --term-dim:   #1d8f44;
-            --muted:      #5a5a5a;
-            --font-pixel: "Saturno", "JetBrains Mono", "Menlo", monospace;
-            --font-text:  system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-        [hidden] { display: none !important; }
-
-        html { -webkit-text-size-adjust: 100%; }
-        body {
-            margin: 0; min-height: 100vh;
-            background-color: var(--os-white);
-            /* faint 1-bit dither so the page isn't a flat void */
-            background-image: radial-gradient(#d6d6d6 1px, transparent 1px);
-            background-size: 6px 6px;
-            color: var(--os-black);
-            font: 16px/1.55 var(--font-text);
-        }
-        a { color: inherit; }
-        /* Everything set in the pixel face: crisp, never smoothed. */
-        .eb-btn, .win-title, .win-ver, .steps li, .crt-lines {
-            font-family: var(--font-pixel);
-            -webkit-font-smoothing: none;
-            -moz-osx-font-smoothing: grayscale;
-        }
-        /* Small-text legibility: the pixel face is thin below ~14px, so every
-           glyph is stamped twice 1px apart (same trick as Radio Jungle's .pixel-bold). */
-        .steps li, .win-title { text-shadow: 1px 0 0 currentColor; }
-
-        /* ===== Window (STANDARD UI PANEL TEMPLATE) ======================
-           The frame is a PixelFrame canvas; the element itself stays
-           transparent and content sits above it at z-index 1. */
-        .win {
-            position: relative;
-            width: min(560px, calc(100vw - 32px));
-            margin: 40px auto 24px;
-            background: transparent;
-            display: flex; flex-direction: column;
-        }
-        .win-bar {
-            position: relative; z-index: 1;
-            display: flex; align-items: center; justify-content: space-between; gap: 8px;
-            padding: 12px 18px 4px;
-        }
-        .win-title { margin: 0; font: 14px var(--font-pixel); letter-spacing: 0.14em; }
-        .win-ver { font: 12px var(--font-pixel); color: var(--muted); }
-        .win-body { position: relative; z-index: 1; padding: 8px 22px 24px; }
-
-        section > :first-child { margin-top: 6px; }
-        .lead { font-size: 19px; font-weight: 600; line-height: 1.4; margin: 14px 0; }
-        .small { font-size: 14px; color: var(--muted); line-height: 1.55; }
-
-        /* ===== Buttons: the house .eb-btn pill ========================= */
-        .eb-btn {
-            position: relative; background: transparent; border: none;
-            padding: 12px 20px; color: var(--os-black);
-            font: 16px var(--font-pixel); letter-spacing: 0.06em;
-            cursor: pointer; overflow: visible;
-            min-height: 48px;   /* thumb-sized */
-            filter: drop-shadow(4px 4px 0 var(--os-black));
-        }
-        .eb-btn > * { position: relative; z-index: 1; }
-        .eb-btn:hover { filter: drop-shadow(4px 4px 0 var(--os-black)) invert(0.06); }
-        .eb-btn:active { transform: translate(2px, 2px); filter: drop-shadow(2px 2px 0 var(--os-black)); }
-        .eb-btn:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 6px; }
-        .eb-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
-        .eb-btn.big { font-size: 19px; padding: 16px 26px; min-height: 60px; }
-        .eb-btn.slim { font-size: 14px; padding: 8px 14px; min-height: 40px; }
-        .row { display: flex; flex-wrap: wrap; gap: 16px 18px; align-items: center; margin: 18px 0 6px; }
 
         /* ===== Step pills ============================================= */
         .steps {
@@ -177,187 +99,6 @@
         .footer { text-align: center; font-size: 13px; color: #333; margin: 0 16px 32px; }
         .footer span { background: rgba(255,255,255,0.8); padding: 3px 8px; }
 
-        /* ===== Backgrounds (House.setTheme) ============================
-           Named after Radio Jungle's world palettes. A soft gradient under
-           the same 1-bit dot dither, fixed so it doesn't scroll away. */
-        body[class*="bg-"] { background-attachment: fixed; }
-        body.bg-sunset    { background-image: radial-gradient(rgba(255,255,255,0.35) 1px, transparent 1px), linear-gradient(160deg, #ffd29a, #ff9a8a 45%, #e47bb4); background-size: 6px 6px, auto; }
-        body.bg-ocean     { background-image: radial-gradient(rgba(255,255,255,0.35) 1px, transparent 1px), linear-gradient(160deg, #b8f0f5, #6fc3e6 50%, #4a6fd1); background-size: 6px 6px, auto; }
-        body.bg-candy     { background-image: radial-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(135deg, #ffd6ec, #e9d4ff 50%, #c4e3ff); background-size: 6px 6px, auto; }
-        body.bg-forest    { background-image: radial-gradient(rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(170deg, #d6efb8, #8fcf86 50%, #3f7f52); background-size: 6px 6px, auto; }
-        body.bg-vaporwave { background-image: radial-gradient(rgba(255,255,255,0.35) 1px, transparent 1px), linear-gradient(180deg, #ff9de6, #b98cff 50%, #7ee0ff); background-size: 6px 6px, auto; }
-        body.bg-mint      { background-image: radial-gradient(rgba(0,80,50,0.12) 1px, transparent 1px), linear-gradient(160deg, #f0fff8, #a8ecd0); background-size: 6px 6px, auto; }
-        body.bg-night     { background-color: #0a0f0a; background-image: repeating-linear-gradient(to bottom, rgba(51,255,102,0.05) 0 1px, transparent 1px 3px), radial-gradient(rgba(51,255,102,0.18) 1px, transparent 1px); background-size: auto, 6px 6px; }
-        body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
-
-        .win-bar .bg-btn { font-size: 12px; padding: 5px 10px; min-height: 32px; margin-left: auto; }
-        .bg-picker { position: relative; z-index: 1; margin: 8px 22px 0; padding: 14px 16px 16px; }   /* PixelFrame panel */
-        .bg-picker > * { position: relative; z-index: 1; }
-        .bg-picker p { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
-        .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
-        /* Swatches are House.swatch() PixelButtons: the canvas is the look. */
-        .swatch {
-            position: relative; width: 54px; height: 54px; padding: 0; cursor: pointer;
-            border: none; background: transparent; overflow: visible;
-            font: 20px var(--font-pixel); -webkit-font-smoothing: none;
-            filter: drop-shadow(3px 3px 0 var(--os-black));
-        }
-        .swatch > * { position: relative; z-index: 1; }
-        .swatch:hover { filter: drop-shadow(3px 3px 0 var(--os-black)) brightness(1.06); }
-        .swatch[aria-pressed="true"] { filter: none; }
-        .swatch:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 4px; }
-        .swatch .pf-label { text-shadow: 1px 0 0 currentColor, 0 0 3px rgba(255,255,255,0.9); }
-
-        /* ===== Tabs ===================================================== */
-        .tabs { position: relative; z-index: 1; display: flex; gap: 10px; padding: 8px 22px 0; }
-        .tab {
-            font: 14px var(--font-pixel); letter-spacing: 0.08em; padding: 7px 16px; min-height: 40px;
-            border: 2px solid var(--os-black); background: var(--os-white); color: var(--os-black); cursor: pointer;
-            -webkit-font-smoothing: none; text-shadow: 1px 0 0 currentColor;
-        }
-        .tab[aria-selected="true"] { background: var(--os-black); color: var(--os-white); box-shadow: 3px 3px 0 rgba(0,0,0,0.3); }
-        .tab:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 3px; }
-        .win.wide { width: min(940px, calc(100vw - 32px)); }
-
-        /* ===== Stats ==================================================== */
-        .stats-h { font: 16px var(--font-pixel); letter-spacing: 0.08em; margin: 22px 0 6px; text-shadow: 1px 0 0 currentColor; -webkit-font-smoothing: none; }
-        .stats-h:first-child { margin-top: 8px; }
-        .pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
-        .pill {
-            font: 13px var(--font-pixel); letter-spacing: 0.06em; padding: 6px 12px; min-height: 38px;
-            border: 2px solid var(--os-black); background: var(--os-white); color: var(--os-black); cursor: pointer;
-            -webkit-font-smoothing: none;
-        }
-        .pill[aria-pressed="true"] { background: var(--os-black); color: var(--os-white); }
-        .pill:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 2px; }
-        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; margin-top: 6px; }
-        .card { position: relative; padding: 16px 18px 18px; min-width: 0; }
-        .card > * { position: relative; z-index: 1; }
-        .card h3 { margin: 0; font: 14px var(--font-pixel); letter-spacing: 0.08em; text-shadow: 1px 0 0 currentColor; -webkit-font-smoothing: none; }
-        .card-sub { font-size: 13px; color: #444; margin: 2px 0 10px; }
-        .screen { background: var(--os-white); border: 2px solid var(--os-black); padding: 8px 12px 10px; color: var(--os-black); }
-        /* Listening-data tutorial: a house panel with pixel step badges. */
-        .tutorial { margin: 10px 0 12px; }
-        .tut-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-        .tut-steps { list-style: none; margin: 12px 0 2px; padding: 0; display: grid; gap: 14px; }
-        .tut-steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
-        .tut-steps p { margin: 3px 0 0; font-size: 15px; line-height: 1.5; }
-        .tut-steps b { font-weight: 600; }
-        .tut-n {
-            width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-            background: var(--os-black); color: var(--os-white); box-shadow: 3px 3px 0 rgba(0,0,0,0.35);
-            font: 16px var(--font-pixel); -webkit-font-smoothing: none; border-radius: 4px;
-        }
-        .tut-link { font-weight: 600; }
-        .tut-mock {
-            display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; padding: 8px 10px;
-            background: #121212; color: #ffffff; font-size: 13px; border: 2px solid var(--os-black); width: fit-content; max-width: 100%;
-        }
-        .tut-box { width: 14px; height: 14px; border: 2px solid #b3b3b3; border-radius: 3px; display: inline-block; }
-        .tut-box.on { background: #1ed760; border-color: #1ed760; }
-        .tut-btn { background: #ffffff; color: #121212; font-weight: 700; padding: 3px 12px; border-radius: 999px; margin-left: 6px; }
-
-        .rank { list-style: none; margin: 0; padding: 0; }
-        .rank-row {
-            display: grid; grid-template-columns: 22px 40px minmax(0, 1fr); gap: 10px; align-items: center; padding: 4px 0;
-            animation: row-in 0.45s steps(5) both; animation-delay: calc(var(--i, 0) * 45ms);
-        }
-        #recent-list .rank-row { grid-template-columns: 40px minmax(0, 1fr); }
-        .rank-n { font: 13px var(--font-pixel); text-align: right; -webkit-font-smoothing: none; }
-        .thumb { width: 40px; height: 40px; object-fit: cover; border: 2px solid var(--os-black); background: #d8dae0; box-sizing: border-box; }
-        .thumb.blank { background: repeating-conic-gradient(#c6c8cf 0 25%, #e4e5ea 0 50%) 0 0 / 6px 6px; }
-        .rank-text { display: flex; flex-direction: column; min-width: 0; }
-        .rank-name, .rank-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rank-name { font-weight: 600; font-size: 15px; }
-        .rank-sub { font-size: 13px; color: #444; }
-        @keyframes row-in { from { opacity: 0; transform: translateX(-8px); } }
-
-        .hbar { padding: 4px 2px 6px; animation: row-in 0.45s steps(5) both; animation-delay: calc(var(--i, 0) * 45ms); }
-        .hbar:focus-visible { outline: 2px dashed var(--os-black); outline-offset: 1px; }
-        .hbar-head { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
-        .hbar-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-        .hbar-sub { font-weight: 400; color: #555; }
-        .hbar-val { flex: none; color: #222; font-variant-numeric: tabular-nums; }
-        .hbar-track { height: 12px; margin-top: 3px; }
-        .hbar-track i {
-            display: block; height: 100%; background: #1d8f44; border-radius: 0 4px 4px 0;
-            transform-origin: left center; animation: grow 0.7s steps(7) both;
-            animation-delay: calc(var(--i, 0) * 60ms + 120ms);
-        }
-        .hbar:hover .hbar-track i, .hbar:focus .hbar-track i { background: #146b32; }
-        @keyframes grow { from { transform: scaleX(0); } }
-
-        .crt-chart {
-            position: relative; background: var(--term-bg); border: 2px solid var(--os-black);
-            padding: 24px 10px 6px; color: #8fd9a5;
-        }
-        .crt-chart::after, .hero::after {
-            content: ""; position: absolute; inset: 2px; pointer-events: none;
-            background: repeating-linear-gradient(to bottom, rgba(51,255,102,0.06) 0 1px, transparent 1px 3px);
-        }
-        .cols-plot { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
-        .col { flex: 1; height: 100%; display: flex; justify-content: center; align-items: flex-end; position: relative; min-width: 0; }
-        .col:focus-visible { outline: 2px dashed #8fd9a5; }
-        .col i {
-            display: block; width: 100%; max-width: 24px; min-height: 1px; background: #23b04c;
-            border-radius: 3px 3px 0 0; transform-origin: bottom; animation: rise 0.7s steps(7) both;
-            animation-delay: calc(var(--i, 0) * 25ms + 120ms);
-        }
-        .col:hover i, .col:focus i { background: #33ff66; }
-        .col-peak {
-            position: absolute; bottom: calc(var(--h, 0%) + 4px); font: 11px var(--font-pixel); font-weight: normal;
-            color: var(--term-green); white-space: nowrap; -webkit-font-smoothing: none;
-        }
-        .cols-axis { display: flex; gap: 2px; margin-top: 4px; }
-        .cols-axis span { flex: 1; min-width: 0; font: 11px var(--font-pixel); text-align: center; white-space: nowrap; overflow: visible; -webkit-font-smoothing: none; }
-        @keyframes rise { from { transform: scaleY(0); } }
-
-        .hero {
-            position: relative; background: var(--term-bg); border: 2px solid var(--os-black); box-shadow: 4px 4px 0 var(--os-black);
-            padding: 16px 20px; margin: 6px 0 16px; color: var(--term-green); text-shadow: 0 0 6px rgba(51,255,102,0.45);
-        }
-        .hero-min { display: block; font: 52px/1.05 var(--font-pixel); -webkit-font-smoothing: none; }
-        .hero-min::after { content: "_"; animation: blink 1s steps(1) infinite; }
-        .hero-label { font: 14px var(--font-pixel); color: #8fd9a5; -webkit-font-smoothing: none; }
-        @keyframes blink { 50% { opacity: 0; } }
-
-        .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; margin: 0 0 16px; }
-        .card .tiles { margin: 0 0 10px; }
-        .tile { background: var(--os-white); border: 2px solid var(--os-black); box-shadow: 3px 3px 0 var(--os-black); padding: 8px 10px; }
-        .tile-val { display: block; font-size: 24px; font-weight: 700; line-height: 1.2; }
-        .tile-label { font-size: 13px; color: #444; }
-
-        .drop {
-            display: block; margin: 10px 0 6px; padding: 18px 16px; text-align: center; cursor: pointer;
-            border: 3px dashed var(--os-black); background: rgba(255,255,255,0.75); font-weight: 600;
-        }
-        .drop.over { background: #e3ffe9; }
-        .drop input { display: block; margin: 10px auto 0; font: 14px var(--font-text); max-width: 100%; }
-
-        .cover-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 16px; }
-        .cover-strip img {
-            width: 56px; height: 56px; object-fit: cover; border: 2px solid var(--os-black); box-shadow: 2px 2px 0 var(--os-black);
-            animation: row-in 0.45s steps(5) both; animation-delay: calc(var(--i, 0) * 40ms);
-        }
-
-        /* Shared dark tooltip slab (House.initTooltip). */
-        .house-tip { position: fixed; z-index: 100; padding: 7px 11px 8px; max-width: 280px; pointer-events: none; color: #eef0f4; font-size: 13px; line-height: 1.4; }
-        .house-tip-text { position: relative; z-index: 1; }
-
-        @media (prefers-reduced-motion: reduce) {
-            .rank-row, .hbar, .hbar-track i, .col i, .cover-strip img, .hero-min::after { animation: none !important; }
-        }
-
-        @media (max-width: 520px) {
-            .win { margin-top: 16px; }
-            .win-body { padding: 6px 16px 20px; }
-            .tabs { padding: 8px 16px 0; }
-            .bg-picker { margin: 8px 16px 0; }
-            .hero-min { font-size: 40px; }
-            .cards { grid-template-columns: minmax(0, 1fr); }
-            .lead { font-size: 18px; }
-            .row .eb-btn { flex: 1 1 100%; }
-        }
     </style>
 </head>
 <body>
@@ -460,6 +201,8 @@
                         <span class="hint">Spotify usually only shares their names and links, not their songs.</span></label>
                     <label><input type="checkbox" id="opt-albums" checked> Saved albums</label>
                     <label><input type="checkbox" id="opt-artists" checked> Artists I follow</label>
+                    <label><input type="checkbox" id="opt-stats" checked> My top artists and songs
+                        <span class="hint">So the stats page in your backup has them too.</span></label>
                     <label><input type="checkbox" id="opt-covers" checked> Cover pictures
                         <span class="hint">Playlist covers, plus album art next to every song in your music page.</span></label>
                 </div>
@@ -483,7 +226,7 @@
                     <button id="download-btn" class="eb-btn big" type="button">Download my backup</button>
                     <button id="print-btn" class="eb-btn" type="button">View my music</button>
                 </div>
-                <p class="small">The download is a .zip file. Double-click it to open the folder inside, and start with <b>READ ME FIRST</b>. <b>My Music.html</b> inside is the same page as &ldquo;View my music&rdquo;, with all the pictures. Keep a copy somewhere safe: email it to yourself, or put it on a USB stick or in Google Drive.</p>
+                <p class="small">The download is a .zip file. Double-click it to open the folder inside, and start with <b>READ ME FIRST</b>. <b>My Music.html</b> inside is the same as &ldquo;View my music&rdquo;: your whole library with tabs, pictures, stats and display settings, and it works without internet. Keep a copy somewhere safe: email it to yourself, or put it on a USB stick or in Google Drive.</p>
                 <div id="done-warnings" class="warnings" hidden></div>
                 <div class="row">
                     <button id="again-btn" class="eb-btn slim" type="button">Back up again</button>
@@ -566,19 +309,7 @@
                 <input id="history-file" type="file" accept=".zip,.json,application/zip,application/json" multiple>
             </label>
             <p id="history-status" class="small" aria-live="polite">Your file is read on this device and never uploaded.</p>
-            <div id="history-out" hidden>
-                <div id="year-pills" class="pills" role="group" aria-label="Year"></div>
-                <div class="hero"><span id="hero-min" class="hero-min">0</span><span class="hero-label">minutes listened &middot; <span id="hero-range"></span></span></div>
-                <div id="history-tiles" class="tiles"></div>
-                <div class="cards">
-                    <div class="card" id="card-h-artists"><h3>Top artists</h3><p class="card-sub">By minutes listened</p><div class="screen"><div id="hist-artists"></div></div></div>
-                    <div class="card" id="card-h-tracks"><h3>Top songs</h3><p class="card-sub">By plays (30 seconds or more)</p><div class="screen"><div id="hist-tracks"></div></div></div>
-                    <div class="card" id="card-albums"><h3>Top albums</h3><p class="card-sub">By minutes listened</p><div class="screen"><div id="hist-albums"></div></div></div>
-                    <div class="card" id="card-h-time"><h3 id="time-title">Minutes by year</h3><p class="card-sub">Total listening time</p><div class="screen"><div id="hist-time"></div></div></div>
-                    <div class="card" id="card-h-clock"><h3>Time of day</h3><p class="card-sub">Hours listened in each hour of the day</p><div id="hist-clock" class="crt-chart"></div></div>
-                    <div class="card" id="card-h-week"><h3>Day of the week</h3><p class="card-sub">Hours listened on each day</p><div id="hist-week" class="crt-chart"></div></div>
-                </div>
-            </div>
+            <div id="history-out" hidden></div>
         </div>
     </main>
     <p class="footer"><span>Runs entirely in your browser &middot; read-only access &middot; no server, no tracking</span></p>
@@ -593,6 +324,7 @@
     <script src="js/exporters.js"></script>
     <script src="js/zip.js"></script>
     <script src="js/history.js"></script>
+    <script src="js/charts.js"></script>
     <script src="js/stats-live.js"></script>
     <script src="js/stats-ui.js"></script>
     <script src="js/app.js"></script>

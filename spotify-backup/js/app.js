@@ -338,6 +338,7 @@
       albums: $("opt-albums").checked,
       artists: $("opt-artists").checked,
       covers: $("opt-covers").checked,
+      stats: $("opt-stats").checked,
     };
   }
 
@@ -354,6 +355,24 @@
       fontDataUrl = "";
     }
     return fontDataUrl;
+  }
+
+  // The viewer inside My Music.html is these files pasted into one page
+  // (see Exporters.VIEWER_ASSETS). If any fail to load, the backup still
+  // gets the simple static page instead.
+  let viewerAssets;
+  async function loadViewerAssets() {
+    if (viewerAssets !== undefined) return viewerAssets;
+    try {
+      const get = async f => { const r = await fetch(f); if (!r.ok) throw new Error(f); return r.text(); };
+      viewerAssets = {
+        css: await Promise.all(Exporters.VIEWER_ASSETS.css.map(get)),
+        js: await Promise.all(Exporters.VIEWER_ASSETS.js.map(get)),
+      };
+    } catch (e) {
+      viewerAssets = null;
+    }
+    return viewerAssets;
   }
 
   function preventLeave(e) { e.preventDefault(); e.returnValue = ""; }
@@ -406,7 +425,11 @@
 
   async function finish(data, failure) {
     $("run-label").textContent = "Packing your backup…";
-    const { root, files } = Exporters.buildFiles(data, { fontDataUrl: await loadFontDataUrl() });
+    const { root, files } = Exporters.buildFiles(data, {
+      fontDataUrl: await loadFontDataUrl(),
+      viewerAssets: await loadViewerAssets(),
+      theme: House.currentTheme().id,
+    });
     const zip = Zip.makeZip(files);
     const html = files.find(f => f.path.endsWith("/My Music.html")).data;
     result = { blob: new Blob([zip], { type: "application/zip" }), root, html, data };

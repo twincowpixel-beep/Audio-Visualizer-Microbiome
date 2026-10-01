@@ -33,6 +33,12 @@ Then open **http://127.0.0.1:8080/**. Use `127.0.0.1`, not `localhost`: Spotify 
 - **Background** (title bar) switches between backgrounds named after Radio Jungle's palettes, and rotates every button's hue to match. The choice is remembered per browser.
 - **Cover pictures** in the backup now also include album art, embedded once per album in `My Music.html`, so the page keeps its pictures offline.
 
+## The backup's own viewer (My Music.html)
+
+Every backup includes `My Music.html`, a self-contained page that works offline: tabs for Liked songs, Playlists, Albums, Artists and Stats, the same Background picker as the site, a Settings panel (layout: list / compact / grid, item size, which details show, sort order, text style), and search. Its Stats tab works out library stats from the backup itself, shows the top-picks snapshot taken on backup day, and accepts the Spotify data download for minutes listened, all without internet.
+
+How it's built: `Exporters.viewerHtml()` pastes `css/shared.css`, `css/viewer.css` and the scripts in `Exporters.VIEWER_ASSETS.js` into one file, with the backup as JSON and the pictures as CSS classes. "View my music" on the site opens that same page, so the site's Content-Security-Policy allows the viewer script by its SHA-256 hash. **After changing any of those scripts, run `node spotify-backup/tools/csp-hash.js`** (a test fails until you do). Also leave Netlify's asset optimisation/minification off, since it would change the files.
+
 ## Putting it on Netlify (drag and drop)
 
 1. Zip the *contents* of this folder (`index.html` must be at the top of the zip), leaving out `tests/`. Or just drag the folder itself.
@@ -81,6 +87,10 @@ These are also the most likely reasons the Spotify login never worked in AudioBi
 | `js/house.js` | Shared house-style chrome: pixel buttons and panels, backgrounds, tooltip |
 | `js/stats-live.js` / `js/history.js` | Stats from the Web API / from Spotify's data download |
 | `js/stats-ui.js` | The My stats tab |
+| `js/charts.js` | Chart pieces shared by the site and the viewer |
+| `js/viewer-runtime.js`, `css/viewer.css` | The app inside My Music.html |
+| `css/shared.css` | House look shared by the site and the viewer |
+| `tools/csp-hash.js` | Updates the viewer script hash in index.html |
 | `js/pixel-frame.js` | House-style `PixelFrame` / `PixelButton` (copy of `../js/pixel-frame.js`) |
 
 ## Tests
