@@ -23,11 +23,12 @@
     "stop-btn": 0.02, "logout-btn": 0.02, "logout2-btn": 0.02, "again-btn": 0.72,
     "copy-btn": 0.64, "save-id-btn": 0.33,
     "request-btn": 0.88, "send-request-btn": 0.88, "request-back-btn": 0.72, "request-done-back-btn": 0.72,
+    "request-copy-btn": 0.64,
     "bg-btn": 0.95, "stats-login-btn": 0.38, "live-relogin": 0.38,
     // Stats cards each take their own colour so the page reads as a set of panels.
     "card-artists": 0.95, "card-tracks": 0.58, "card-genres": 0.11, "card-recent": 0.72,
     "card-h-artists": 0.95, "card-h-tracks": 0.58, "card-albums": 0.11, "card-h-time": 0.47,
-    "card-h-clock": 0.72, "card-h-week": 0.64,
+    "card-h-clock": 0.72, "card-h-week": 0.64, "card-tutorial": 0.11,
   };
   const NOTICE_HUE = { error: 0.02, info: 0.11, ok: 0.33 };
 
@@ -36,7 +37,9 @@
     document.querySelectorAll(".eb-btn").forEach(el => House.button(el, HUE[el.id] ?? 0.5));
     document.querySelectorAll(".card").forEach(el => House.frame(el, HUE[el.id] ?? 0.5, { r: 8, border: 4 }));
     House.frame($("notice"), NOTICE_HUE.error, { r: 8, border: 4 });
+    House.frame($("bg-picker"), HUE["bg-btn"], { r: 8, border: 4 });
     House.crt($("crt"));
+    progressBar = DitherBar.create($("bar"));
     House.initTooltip();
   }
 
@@ -44,21 +47,22 @@
   function wireBackgrounds() {
     const box = $("swatches");
     const current = House.currentTheme();
+    const tiles = [];
     House.THEMES.forEach(t => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "swatch";
-      b.style.setProperty("--a", t.swatch[0]);
-      b.style.setProperty("--b", t.swatch[1]);
       b.dataset.tip = t.name;
       b.setAttribute("aria-label", t.name);
       b.setAttribute("aria-pressed", String(t.id === current.id));
+      box.append(b);
+      const pb = House.swatch(b, t);
+      pb.setSelected(t.id === current.id);
+      tiles.push({ b, pb });
       b.addEventListener("click", () => {
-        box.querySelectorAll(".swatch").forEach(x => x.setAttribute("aria-pressed", "false"));
-        b.setAttribute("aria-pressed", "true");
+        tiles.forEach(x => { x.b.setAttribute("aria-pressed", String(x.b === b)); x.pb.setSelected(x.b === b); });
         House.setTheme(t.id);
       });
-      box.append(b);
     });
     House.setTheme(current.id);
     $("bg-btn").addEventListener("click", () => {
@@ -203,12 +207,46 @@
     $("req-name").focus();
   }
 
-  function requestMailto(name, email) {
-    const body = "Hi! Please add me to the Spotify Backup page.\n\nName: " + name +
-                 "\nSpotify email: " + email +
-                 "\n\n(Add me at developer.spotify.com/dashboard → your app → User Management.)";
-    return "mailto:" + OWNER_EMAIL + "?subject=" + encodeURIComponent("Spotify Backup: access request from " + name) +
-           "&body=" + encodeURIComponent(body);
+  function requestText(name, email) {
+    return "Hi! Please add me to the Spotify Backup page.\n\nName: " + name + "\nSpotify email: " + email +
+           "\n\n(Add me at developer.spotify.com/dashboard → your app → User Management.)";
+  }
+  const requestSubject = name => "Spotify Backup: access request from " + name;
+
+  /** FormSubmit emails the owner directly — no account, one-time activation. */
+  async function viaFormSubmit(name, email) {
+    if (!OWNER_EMAIL && !cfg.FORMSUBMIT_ID) return false;
+    const res = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(cfg.FORMSUBMIT_ID || OWNER_EMAIL), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        name, email,
+        "what to do": "Add this person at developer.spotify.com/dashboard → your app → User Management (their name + this email).",
+        _subject: requestSubject(name),
+        _template: "table",
+        _captcha: "false",
+        _replyto: email,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    // Before the owner clicks "Activate Form", FormSubmit answers
+    // success:"false" with a message about activation — not delivered.
+    return res.ok && (body.success === true || body.success === "true");
+  }
+
+  /** Netlify Forms — only emails anyone if notifications are set up in Netlify. */
+  async function viaNetlify(name, email) {
+    const form = new URLSearchParams(new FormData($("request-form")));
+    form.set("name", name);
+    form.set("email", email);
+    form.set("subject", requestSubject(name));
+    form.set("what-to-do", "Add this person at developer.spotify.com/dashboard → your app → User Management (name + this email).");
+    const res = await fetch("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+    return res.ok;
   }
 
   async function sendRequest(e) {
@@ -219,47 +257,58 @@
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       notice("Please type the email address you use for Spotify.", "info"); $("req-email").focus(); return;
     }
+    if ($("request-form").elements["bot-field"].value) return;   // a bot filled the hidden box
     clearNotice();
     const btn = $("send-request-btn");
     btn.disabled = true;
-    const form = new URLSearchParams(new FormData($("request-form")));
-    form.set("name", name);
-    form.set("email", email);
-    // Netlify uses a field called "subject" as the notification email's subject.
-    form.set("subject", "Spotify Backup: access request from " + name);
-    form.set("what-to-do", "Add this person at developer.spotify.com/dashboard → your app → User Management (name + this email).");
     let sent = false;
-    try {
-      const res = await fetch("/", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: form.toString(),
-      });
-      sent = res.ok;
-    } catch (err) { /* offline, or not on Netlify: fall back to email */ }
+    for (const attempt of [viaFormSubmit, viaNetlify]) {
+      try { sent = await attempt(name, email); } catch (err) { sent = false; }
+      if (sent) break;
+    }
     btn.disabled = false;
 
     $("request-form").hidden = true;
     $("request-done").hidden = false;
     const who = cfg.OWNER_NAME ? OWNER : "The owner";
     if (sent) {
-      $("request-done-text").textContent = "Request sent! " + who + " will add " + email + " to the app. " +
-        "Spotify doesn't send a message when that's done, so just come back and try logging in later.";
+      $("request-done-text").textContent = "Request sent! " + who + " will get an email and add " + email +
+        " to the app. Spotify doesn't send a message when that's done, so just come back and try logging in later.";
       $("request-fallback").hidden = true;
     } else if (OWNER_EMAIL) {
-      $("request-done-text").textContent = "The request form isn't working right now, so here's an email with your " +
-        "details already filled in. Press the link below, then press Send. (Or write to " + OWNER_EMAIL + " yourself.)";
-      $("request-mailto").href = requestMailto(name, email);
+      $("request-done-text").textContent = "The request couldn't be sent automatically, so here it is ready to send " +
+        "yourself. Pick whichever is easiest:";
+      const text = requestText(name, email);
+      $("request-mailto").href = "mailto:" + OWNER_EMAIL + "?subject=" + encodeURIComponent(requestSubject(name)) +
+        "&body=" + encodeURIComponent(text);
+      $("request-gmail").href = "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(OWNER_EMAIL) +
+        "&su=" + encodeURIComponent(requestSubject(name)) + "&body=" + encodeURIComponent(text);
+      $("request-owner-email").textContent = OWNER_EMAIL;
+      $("request-copy-text").textContent = text;
       $("request-fallback").hidden = false;
     } else {
-      $("request-done-text").textContent = "The request form isn't working right now. Please ask " + OWNER +
+      $("request-done-text").textContent = "The request couldn't be sent. Please ask " + OWNER +
         " directly to add " + email + " to the app.";
       $("request-fallback").hidden = true;
     }
   }
 
+  async function copyRequest() {
+    const text = $("request-copy-text").textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      notice("Copied! Paste it into an email or message to " + OWNER_EMAIL + ".", "ok");
+    } catch (e) {
+      const range = document.createRange();
+      range.selectNodeContents($("request-copy-text"));
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      notice("Selected — press Ctrl+C (or ⌘C) to copy it.", "info");
+    }
+  }
+
   // ===== The backup run =================================================
   let controller = null;
+  let progressBar = null;     // DitherBar, made in bootChrome
   let result = null;          // { blob, root, html, data }
   let fontDataUrl = null;
 
@@ -278,16 +327,7 @@
     else if (done) text += " — " + done.toLocaleString() + " so far";
     $("run-label").textContent = text;
     $("run-part").textContent = "Part " + part + " of " + parts + ". Please keep this page open until it's finished.";
-    const bar = $("bar");
-    if (total) {
-      const pct = Math.min(100, Math.round((done / total) * 100));
-      bar.classList.remove("unknown");
-      $("bar-fill").style.width = pct + "%";
-      bar.setAttribute("aria-valuenow", String(pct));
-    } else {
-      bar.classList.add("unknown");
-      bar.removeAttribute("aria-valuenow");
-    }
+    progressBar.set(total ? done / total : null);
   }
 
   function options() {
@@ -482,6 +522,7 @@
     $("start-btn").addEventListener("click", start);
     $("request-btn").addEventListener("click", showRequest);
     $("request-form").addEventListener("submit", sendRequest);
+    $("request-copy-btn").addEventListener("click", copyRequest);
     $("request-back-btn").addEventListener("click", () => { clearNotice(); show("login"); });
     $("request-done-back-btn").addEventListener("click", () => { clearNotice(); show("login"); });
     $("stop-btn").addEventListener("click", () => {

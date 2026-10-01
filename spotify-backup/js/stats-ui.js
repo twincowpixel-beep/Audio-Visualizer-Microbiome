@@ -245,6 +245,7 @@
       }
       history = list;
       year = null;
+      deps.setTutorial(false);    // they've done it — get the steps out of the way
       status.textContent = "";
       renderHistory();
     } catch (e) {
@@ -316,6 +317,15 @@
       range, r => { range = r; loadLive(); });
     $("live-relogin").addEventListener("click", deps.relogin);
     $("stats-login-btn").addEventListener("click", deps.login);
+
+    const toggle = $("tutorial-toggle");
+    const setTutorial = open => {
+      $("tutorial-body").hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.textContent = open ? "Hide" : "Show me how";
+    };
+    toggle.addEventListener("click", () => setTutorial($("tutorial-body").hidden));
+    deps.setTutorial = setTutorial;
 
     const input = $("history-file");
     input.addEventListener("change", () => { if (input.files.length) loadHistory([...input.files]); });

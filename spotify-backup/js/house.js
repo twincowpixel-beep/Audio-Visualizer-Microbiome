@@ -105,6 +105,75 @@
     document.dispatchEvent(new CustomEvent("house:theme", { detail: theme }));
   }
 
+  // ---- dithering ----------------------------------------------------------
+  // 4x4 Bayer matrix: the ordered-dither pattern used for every gradient
+  // here, so blends read as 1-bit pixel art rather than smooth CSS.
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
+  const bayer = (x, y) => BAYER[(y & 3) * 4 + (x & 3)];
+  const rgb = hex => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+
+  /** A pattern that fills `w`×`h` with a diagonal dithered blend a → b,
+      drawn in chunky `px`-sized pixels. */
+  function ditherPattern(ctx, w, h, a, b, px = 2) {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d");
+    const A = rgb(a), B = rgb(b);
+    const img = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const cx = (x / px) | 0, cy = (y / px) | 0;
+      const t = (x / w + y / h) / 2;
+      const col = t > bayer(cx, cy) ? B : A;
+      const i = (y * w + x) * 4;
+      img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    return ctx.createPattern(c, "no-repeat");
+  }
+
+  /** Background picker tile: the house PixelButton (rounded bevel, drop
+      shadow, sink on press) with the background's two colours dithered
+      into its face, a dithered gloss along the top, and a ✓ when chosen. */
+  class SwatchButton extends PixelButton {
+    constructor(el, colors, hue) {
+      super(el, { r: 9, border: 4, ...mutedStyle(hue) });
+      this.colors = colors;
+      this.selected = false;
+      this.draw();
+    }
+    setSelected(on) {
+      this.selected = on;
+      if (this.labelEl) this.labelEl.textContent = on ? "✓" : "";
+      this.draw();
+    }
+    draw() {
+      if (!this.colors) return;   // PixelButton's constructor draws before we're set up
+      const w = this.el.clientWidth, h = this.el.clientHeight;
+      if (w < 6 || h < 6) return;
+      this.opts.fill = ditherPattern(this.ctx, w, h, this.colors[0], this.colors[1]);
+      const wasPressed = this._pressed;
+      this._pressed = this._pressed || this.selected;     // chosen = sunk in, like a held key
+      super.draw();
+      // Dithered gloss on the top-left of the face (PixelFrame's shine).
+      const ox = this._pressed ? 2 : 0, b = this.opts.border, r = this.opts.r;
+      const ctx = this.ctx;
+      for (let x = 0; x < Math.min(18, w - 2 * r); x += 2) {
+        ctx.fillStyle = this.opts.shine;
+        ctx.fillRect(ox + r + x, ox + b + 1, 1, 1);
+        if (x < 10) ctx.fillRect(ox + r + x + 1, ox + b + 2, 1, 1);
+      }
+      ctx.fillRect(ox + b + 1, ox + r, 1, 1);
+      ctx.fillRect(ox + b + 1, ox + r + 2, 1, 1);
+      this._pressed = wasPressed;
+    }
+  }
+
+  function swatch(el, theme) {
+    const pb = new SwatchButton(el, theme.swatch, theme.hue == null ? 0.5 : theme.hue);
+    el.style.color = theme.id === "night" ? "#33ff66" : "#111111";
+    return pb;
+  }
+
   // ---- shared tooltip: one dark pixel slab under whatever has data-tip ----
   let tipEl = null;
   function initTooltip() {
@@ -147,5 +216,6 @@
     document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
   }
 
-  window.House = { hslHex, mutedStyle, THEMES, button, frame, crt, retint, setTheme, currentTheme, initTooltip };
+  window.House = { hslHex, mutedStyle, THEMES, button, frame, crt, retint, setTheme, currentTheme, initTooltip,
+                   swatch, bayer, rgb };
 })();

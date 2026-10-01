@@ -6,7 +6,7 @@
     <!-- The login code sits in the address bar for a moment; never leak it. -->
     <meta name="referrer" content="no-referrer">
     <!-- This page holds a Spotify login, so it may only talk to Spotify. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Spotify Backup</title>
     <style>
         @font-face {
@@ -123,25 +123,14 @@
         }
         .checks .hint { grid-column: 2; font-size: 14px; color: var(--muted); line-height: 1.45; }
 
-        /* ===== Progress: chunky pixel bar (Radio Jungle scope bands) ==== */
-        .bar {
-            height: 14px; background: #d8dae0; border: 2px solid #101014;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 3px 3px 0 var(--os-black);
-            overflow: hidden; margin: 6px 0 10px;
+        /* ===== Progress: DitherBar (js/dither-bar.js) ===================
+           Dark PixelFrame track; a chunky canvas inside flows through a loop
+           of dithered colours. The canvas is the look. */
+        .bar { position: relative; height: 30px; margin: 8px 0 12px; }
+        .dither-bar-canvas {
+            position: absolute; left: 3px; top: 3px; z-index: 1;
+            image-rendering: pixelated; image-rendering: crisp-edges; border-radius: 4px;
         }
-        .bar i {
-            display: block; height: 100%; width: 0%;
-            background: linear-gradient(#6dffa0, #1d8f44);
-            transition: width 0.2s steps(4);
-        }
-        /* Unknown total: marching dither stripes instead of a fake percentage. */
-        .bar.unknown i {
-            width: 100% !important;
-            background: repeating-linear-gradient(90deg, #6dffa0 0 8px, #1d8f44 8px 16px);
-            animation: march 0.6s steps(4) infinite;
-        }
-        @keyframes march { to { background-position: 16px 0; } }
-        @media (prefers-reduced-motion: reduce) { .bar.unknown i { animation: none; } .bar i { transition: none; } }
 
         /* ===== CRT readout: green phosphor terminal panel ================ */
         .crt { position: relative; margin: 14px 0 18px; padding: 10px 12px; }
@@ -183,6 +172,7 @@
         .field-label { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 0; font-weight: 600; }
         .field-label .field { font: 17px/1.3 var(--font-text); flex: none; width: 100%; }
         .mail-link { font-weight: 600; font-size: 17px; }
+        .copy-box { white-space: pre-wrap; font: 14px/1.45 var(--font-text); background: var(--os-white); border: 2px solid var(--os-black); padding: 10px 12px; margin: 6px 0; }
 
         .footer { text-align: center; font-size: 13px; color: #333; margin: 0 16px 32px; }
         .footer span { background: rgba(255,255,255,0.8); padding: 3px 8px; }
@@ -201,20 +191,22 @@
         body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 
         .win-bar .bg-btn { font-size: 12px; padding: 5px 10px; min-height: 32px; margin-left: auto; }
-        .bg-picker {
-            position: relative; z-index: 1; margin: 8px 22px 0; padding: 10px 12px;
-            border: 2px solid var(--os-black); background: var(--os-white);
-            box-shadow: 3px 3px 0 var(--os-black);
-        }
+        .bg-picker { position: relative; z-index: 1; margin: 8px 22px 0; padding: 14px 16px 16px; }   /* PixelFrame panel */
+        .bg-picker > * { position: relative; z-index: 1; }
         .bg-picker p { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
         .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+        /* Swatches are House.swatch() PixelButtons: the canvas is the look. */
         .swatch {
-            width: 44px; height: 44px; padding: 0; cursor: pointer;
-            border: 2px solid var(--os-black);
-            background: linear-gradient(135deg, var(--a) 50%, var(--b) 50%);
+            position: relative; width: 54px; height: 54px; padding: 0; cursor: pointer;
+            border: none; background: transparent; overflow: visible;
+            font: 20px var(--font-pixel); -webkit-font-smoothing: none;
+            filter: drop-shadow(3px 3px 0 var(--os-black));
         }
-        .swatch[aria-pressed="true"] { outline: 3px solid var(--os-black); outline-offset: 3px; }
-        .swatch:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 3px; }
+        .swatch > * { position: relative; z-index: 1; }
+        .swatch:hover { filter: drop-shadow(3px 3px 0 var(--os-black)) brightness(1.06); }
+        .swatch[aria-pressed="true"] { filter: none; }
+        .swatch:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 4px; }
+        .swatch .pf-label { text-shadow: 1px 0 0 currentColor, 0 0 3px rgba(255,255,255,0.9); }
 
         /* ===== Tabs ===================================================== */
         .tabs { position: relative; z-index: 1; display: flex; gap: 10px; padding: 8px 22px 0; }
@@ -244,8 +236,26 @@
         .card h3 { margin: 0; font: 14px var(--font-pixel); letter-spacing: 0.08em; text-shadow: 1px 0 0 currentColor; -webkit-font-smoothing: none; }
         .card-sub { font-size: 13px; color: #444; margin: 2px 0 10px; }
         .screen { background: var(--os-white); border: 2px solid var(--os-black); padding: 8px 12px 10px; color: var(--os-black); }
-        .steps-list { margin: 6px 0 12px; padding-left: 1.4em; }
-        .steps-list li { margin: 4px 0; }
+        /* Listening-data tutorial: a house panel with pixel step badges. */
+        .tutorial { margin: 10px 0 12px; }
+        .tut-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .tut-steps { list-style: none; margin: 12px 0 2px; padding: 0; display: grid; gap: 14px; }
+        .tut-steps li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+        .tut-steps p { margin: 3px 0 0; font-size: 15px; line-height: 1.5; }
+        .tut-steps b { font-weight: 600; }
+        .tut-n {
+            width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+            background: var(--os-black); color: var(--os-white); box-shadow: 3px 3px 0 rgba(0,0,0,0.35);
+            font: 16px var(--font-pixel); -webkit-font-smoothing: none; border-radius: 4px;
+        }
+        .tut-link { font-weight: 600; }
+        .tut-mock {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; padding: 8px 10px;
+            background: #121212; color: #ffffff; font-size: 13px; border: 2px solid var(--os-black); width: fit-content; max-width: 100%;
+        }
+        .tut-box { width: 14px; height: 14px; border: 2px solid #b3b3b3; border-radius: 3px; display: inline-block; }
+        .tut-box.on { background: #1ed760; border-color: #1ed760; }
+        .tut-btn { background: #ffffff; color: #121212; font-weight: 700; padding: 3px 12px; border-radius: 999px; margin-left: 6px; }
 
         .rank { list-style: none; margin: 0; padding: 0; }
         .rank-row {
@@ -427,7 +437,15 @@
                 </form>
                 <div id="request-done" hidden>
                     <p id="request-done-text"></p>
-                    <p id="request-fallback" hidden><a id="request-mailto" class="mail-link" href="#">Open the email</a></p>
+                    <div id="request-fallback" hidden>
+                        <p class="row">
+                            <a id="request-gmail" class="mail-link" href="#" target="_blank" rel="noopener">Send it with Gmail</a>
+                            <a id="request-mailto" class="mail-link" href="#">Send it with my email app</a>
+                        </p>
+                        <p class="small">Or copy this and send it to <b id="request-owner-email"></b> any way you like:</p>
+                        <pre id="request-copy-text" class="copy-box"></pre>
+                        <div class="row"><button id="request-copy-btn" class="eb-btn slim" type="button">Copy</button></div>
+                    </div>
                     <div class="row"><button id="request-done-back-btn" class="eb-btn slim" type="button">Back to log in</button></div>
                 </div>
             </section>
@@ -451,7 +469,7 @@
 
             <section id="step-run" hidden>
                 <p class="lead" id="run-label">Getting ready&hellip;</p>
-                <div id="bar" class="bar unknown" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100"><i id="bar-fill"></i></div>
+                <div id="bar" class="bar" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100"></div>
                 <p class="small" id="run-part">Please keep this page open until it's finished.</p>
                 <div id="crt" class="crt"><div id="log" class="crt-lines" aria-live="polite"></div></div>
                 <div class="row"><button id="stop-btn" class="eb-btn slim" type="button">Stop</button></div>
@@ -493,12 +511,57 @@
             </div>
 
             <h2 class="stats-h">Minutes listened</h2>
-            <p class="small">Spotify only shares minutes and play counts in the copy of your data you can download, not through the login. To get it:</p>
-            <ol class="steps-list small">
-                <li>Open <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener">spotify.com/account/privacy</a> and scroll to &ldquo;Download your data&rdquo;.</li>
-                <li>Tick <b>Extended streaming history</b> (your whole history) or <b>Account data</b> (the last year), and request it.</li>
-                <li>When Spotify emails you a link (days to a few weeks), download the .zip and drop it below.</li>
-            </ol>
+            <p class="small">Spotify keeps a record of every song you play, but it only shares minutes and play counts in a copy of your data you ask for, not through the login. It's free and takes a few clicks.</p>
+
+            <div class="card tutorial" id="card-tutorial">
+                <div class="tut-head">
+                    <h3>How to get your listening data</h3>
+                    <button id="tutorial-toggle" class="pill" type="button" aria-expanded="true" aria-controls="tutorial-body">Hide</button>
+                </div>
+                <ol id="tutorial-body" class="tut-steps">
+                    <li>
+                        <span class="tut-n" aria-hidden="true">1</span>
+                        <div>
+                            <b>Open Spotify's privacy page</b>
+                            <p>Use a web browser (on a phone, use the browser, not the Spotify app) and log in if it asks.</p>
+                            <p><a class="tut-link" href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener">Open spotify.com/account/privacy &#8599;</a></p>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="tut-n" aria-hidden="true">2</span>
+                        <div>
+                            <b>Tick what you want, then press &ldquo;Request data&rdquo;</b>
+                            <p>Scroll down to <b>Download your data</b>. Tick <b>Extended streaming history</b> for every song you've ever played (best for all-time stats). <b>Account data</b> only covers the last year but arrives sooner. Ticking both is fine.</p>
+                            <div class="tut-mock" aria-hidden="true">
+                                <span class="tut-box on"></span> Account data
+                                <span class="tut-box on"></span> Extended streaming history
+                                <span class="tut-btn">Request data</span>
+                            </div>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="tut-n" aria-hidden="true">3</span>
+                        <div>
+                            <b>Confirm the email Spotify sends straight away</b>
+                            <p>Open it and press <b>Confirm</b>. Nothing happens until you do. Can't see it? Check your spam folder.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="tut-n" aria-hidden="true">4</span>
+                        <div>
+                            <b>Wait for &ldquo;your data is ready&rdquo;</b>
+                            <p>Account data usually takes up to about 5 days; extended streaming history can take up to 30. Spotify emails you a download link, which only works for about two weeks, so grab it when it comes.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="tut-n" aria-hidden="true">5</span>
+                        <div>
+                            <b>Download the .zip and drop it below</b>
+                            <p>The file is called something like <b>my_spotify_data.zip</b>. No need to unzip it: drag it into the box below, or press <b>Choose file</b> and pick it from your Downloads.</p>
+                        </div>
+                    </li>
+                </ol>
+            </div>
             <label id="drop-zone" class="drop">Drop your Spotify data .zip here, or choose it:
                 <input id="history-file" type="file" accept=".zip,.json,application/zip,application/json" multiple>
             </label>
@@ -523,6 +586,7 @@
     <script src="js/config.js"></script>
     <script src="js/pixel-frame.js"></script>
     <script src="js/house.js"></script>
+    <script src="js/dither-bar.js"></script>
     <script src="js/spotify-auth.js"></script>
     <script src="js/spotify-api.js"></script>
     <script src="js/backup.js"></script>

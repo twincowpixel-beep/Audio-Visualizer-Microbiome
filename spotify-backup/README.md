@@ -38,7 +38,11 @@ Then open **http://127.0.0.1:8080/**. Use `127.0.0.1`, not `localhost`: Spotify 
 1. Zip the *contents* of this folder (`index.html` must be at the top of the zip), leaving out `tests/`. Or just drag the folder itself.
 2. Go to [app.netlify.com/drop](https://app.netlify.com/drop) and drop it in. Note the address you get, e.g. `https://spotify-backup-xyz.netlify.app`.
 3. In the Spotify dashboard → your app → **Settings → Redirect URIs**, add that address *with a slash on the end*, then Save.
-4. **Request access form** (Netlify Forms):
+4. **Request access emails** go through FormSubmit (formsubmit.co) to `OWNER_EMAIL` in `js/config.js`:
+   - Send yourself one test request from the live site. FormSubmit emails you an **Activate Form** link; click it. Requests before that click are not delivered; every one after it is.
+   - Optional: the activation email offers a random ID; put it in `FORMSUBMIT_ID` so your address isn't visible in the page.
+   - Backup route if FormSubmit is unavailable, Netlify Forms (below); if both fail, the friend gets the request ready to send by Gmail, their email app, or copy and paste.
+   Netlify Forms backup:
    - Netlify → your site → **Forms**: if it says form detection is off, click **Enable form detection**, then drop the zip in again (Deploys tab) so Netlify finds the form.
    - **Site configuration → Notifications → Emails and webhooks → Form submission notifications → Add notification → Email**: enter your address and pick the `request-access` form.
    - If the form isn't set up, friends instead get a ready-written email to `OWNER_EMAIL` from `js/config.js`.
