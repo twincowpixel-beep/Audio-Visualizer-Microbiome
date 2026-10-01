@@ -260,20 +260,44 @@
   }
 
   // ---------- printable page --------------------------------------------
+  function base64(bytes) {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  function imageDataUrl(type, bytes) {
+    const safe = /^image\/(jpeg|png|webp|gif)$/i.test(type) ? type.toLowerCase() : "image/jpeg";
+    return "data:" + safe + ";base64," + base64(bytes);
+  }
+
   function printableHtml(data, { fontDataUrl = "" } = {}) {
     const sections = [], toc = [];
+    // Album art is embedded once per album as a CSS class, so a song list
+    // of 5,000 doesn't repeat the same picture 5,000 times. The page keeps
+    // working with no internet and after the Spotify account is gone.
+    const artClass = new Map();
+    let artCss = "";
+    (data.thumbs || []).forEach((t, i) => {
+      artClass.set(t.url, "a" + i);
+      artCss += ".a" + i + "{background-image:url(" + imageDataUrl(t.type, t.bytes) + ")}";
+    });
+    const art = url => artClass.size
+      ? "<i class=\"art" + (artClass.has(url) ? " " + artClass.get(url) : "") + "\"></i>" : "";
+    const coverFor = new Map((data.covers || []).map(c => [c.playlistId, imageDataUrl(c.type, c.bytes)]));
     const trackLi = t => {
-      if (t.kind === "missing") return "<li class=\"gone\">" + escapeHtml(t.title) + "</li>";
+      if (t.kind === "missing") return "<li class=\"gone\">" + art("") + escapeHtml(t.title) + "</li>";
       const extra = [t.album, year(t.releaseDate), fmtLength(t.durationMs)].filter(Boolean).join(" · ");
       const tag = t.kind === "local" ? " <em>[local file]</em>" : t.kind === "episode" ? " <em>[podcast]</em>" : "";
-      return "<li><b>" + escapeHtml(t.title) + "</b>" +
+      return "<li>" + art(t.albumImage) + "<b>" + escapeHtml(t.title) + "</b>" +
         (t.artists.length ? " — " + escapeHtml(t.artists.join(", ")) : "") +
         (extra ? " <span>\u00b7 " + escapeHtml(extra) + "</span>" : "") + tag + "</li>";
     };
-    const add = (id, title, meta, body) => {
+    const add = (id, title, meta, body, cover = "") => {
       toc.push("<li><a href=\"#" + id + "\">" + escapeHtml(title) + "</a></li>");
-      sections.push("<section id=\"" + id + "\"><h2>" + escapeHtml(title) + "</h2>" +
-                    (meta ? "<p class=\"meta\">" + meta + "</p>" : "") + body + "</section>");
+      sections.push("<section id=\"" + id + "\"><div class=\"sec-head\">" +
+                    (cover ? "<img class=\"cover\" alt=\"\" src=\"" + cover + "\">" : "") +
+                    "<div><h2>" + escapeHtml(title) + "</h2>" +
+                    (meta ? "<p class=\"meta\">" + meta + "</p>" : "") + "</div></div>" + body + "</section>");
     };
 
     if (data.likedSongs) {
@@ -293,12 +317,12 @@
         if (pl.url) body += "<p class=\"link\"><a href=\"" + escapeHtml(pl.url) + "\">" + escapeHtml(pl.url) + "</a></p>";
         body += pl.tracks ? "<ol>" + pl.tracks.map(trackLi).join("") + "</ol>"
                           : "<p class=\"note\">" + escapeHtml(pl.note || "Songs not available.") + "</p>";
-        add("pl-" + (i + 1), pl.name, escapeHtml(meta.join(" · ")), body);
+        add("pl-" + (i + 1), pl.name, escapeHtml(meta.join(" · ")), body, coverFor.get(pl.id) || "");
       });
     }
     if (data.albums) {
       add("albums", "Saved Albums", escapeHtml(plural(data.albums.items.length, "album")),
-          "<ol>" + data.albums.items.map(a => "<li><b>" + escapeHtml(a.title) + "</b>" +
+          "<ol>" + data.albums.items.map(a => "<li>" + art(a.imageUrl) + "<b>" + escapeHtml(a.title) + "</b>" +
             (a.artists.length ? " — " + escapeHtml(a.artists.join(", ")) : "") +
             (year(a.releaseDate) ? " <span>\u00b7 " + escapeHtml(year(a.releaseDate)) + "</span>" : "") + "</li>").join("") + "</ol>");
     }
@@ -320,7 +344,12 @@
       "body{margin:0 auto;max-width:860px;padding:24px 16px 64px;background:#fff;color:var(--ink);" +
       "font:15px/1.5 system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif}" +
       "h1,h2{font-family:Saturno,\"Courier New\",monospace;letter-spacing:.06em;font-weight:normal}" +
-      "h1{font-size:30px;margin:0 0 4px}h2{font-size:20px;margin:36px 0 2px;padding-bottom:4px;border-bottom:3px solid var(--rule)}" +
+      "h1{font-size:30px;margin:0 0 4px}h2{font-size:20px;margin:0}" +
+      ".sec-head{display:flex;gap:14px;align-items:center;margin:36px 0 6px;padding-bottom:6px;border-bottom:3px solid var(--rule);break-after:avoid}" +
+      ".sec-head .meta{margin:2px 0 0}nav h2{margin:28px 0 6px;padding-bottom:4px;border-bottom:3px solid var(--rule)}" +
+      ".cover{width:84px;height:84px;object-fit:cover;border:2px solid var(--rule);box-shadow:3px 3px 0 var(--rule);flex:none}" +
+      ".art{display:inline-block;width:28px;height:28px;margin:0 8px 0 2px;vertical-align:middle;border:1px solid var(--rule);" +
+      "background:#e4e5ea center/cover no-repeat;-webkit-print-color-adjust:exact;print-color-adjust:exact}" + artCss +
       ".meta,.desc,.link,.note{margin:4px 0;color:var(--muted)}.link a{color:inherit;word-break:break-all}" +
       "ol{padding-left:3.2em;margin:10px 0}li{margin:1px 0;break-inside:avoid}li span{color:var(--muted)}" +
       "li.gone{color:var(--muted);font-style:italic}em{color:var(--muted);font-style:normal}" +
@@ -407,6 +436,7 @@
 
     const json = Object.assign({}, data);
     delete json.covers;   // pictures are files of their own; keep the JSON readable
+    delete json.thumbs;
     put("backup.json", JSON.stringify(json, null, 2) + "\n");
 
     files.unshift(

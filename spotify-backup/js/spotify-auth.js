@@ -16,12 +16,15 @@
 (function () {
   const AUTH_URL  = "https://accounts.spotify.com/authorize";
   const TOKEN_URL = "https://accounts.spotify.com/api/token";
-  // Read-only, and only what a backup needs.
+  // Read-only, and only what the backup and stats need.
   const SCOPES = [
     "playlist-read-private",
     "playlist-read-collaborative",
     "user-library-read",
     "user-follow-read",
+    // For the Stats tab: top artists/songs and the last 50 plays.
+    "user-top-read",
+    "user-read-recently-played",
   ];
   // The verifier has to survive the trip to Spotify and back. localStorage
   // rather than sessionStorage because some phones finish the login in a

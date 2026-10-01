@@ -45,6 +45,7 @@
       artists: (t.artists || []).map(a => a && a.name).filter(Boolean),
       album: album.name || "",
       releaseDate: album.release_date || "",
+      albumImage: smallImage(album.images),
       durationMs: t.duration_ms ?? null,
       isrc: (t.external_ids && t.external_ids.isrc) || "",
       url: (t.external_urls && t.external_urls.spotify) || "",
@@ -68,6 +69,7 @@
       title: a.name || "",
       artists: (a.artists || []).map(x => x && x.name).filter(Boolean),
       releaseDate: a.release_date || "",
+      imageUrl: smallImage(a.images),
       totalTracks: a.total_tracks ?? null,
       upc: (a.external_ids && a.external_ids.upc) || "",
       addedAt: (entry && entry.added_at) || "",
@@ -89,6 +91,13 @@
   function catchUp(raw, out, norm) {
     while (out.length < raw.length) out.push(norm(raw[out.length], out.length + 1));
     return out;
+  }
+
+  /** Smallest picture that's still at least 64px — a thumbnail for lists. */
+  function smallImage(images) {
+    if (!Array.isArray(images) || !images.length) return "";
+    const sorted = [...images].sort((a, b) => (a.width || 0) - (b.width || 0));
+    return (sorted.find(i => (i.width || 0) >= 64) || sorted[0]).url || "";
   }
 
   function bigImage(images) {
@@ -117,7 +126,7 @@
       format: "spotify-backup", formatVersion: 1,
       createdAt: new Date().toISOString(), complete: false,
       account: null, likedSongs: null, playlists: null, albums: null, artists: null,
-      warnings: [], covers: [],
+      warnings: [], covers: [], thumbs: [],
     });
 
     const wantPlaylists = opts.myPlaylists || opts.followedPlaylists;
@@ -327,6 +336,46 @@
           " couldn't be downloaded; their web links are in the backup instead.");
       }
       if (withArt.length) log("Cover pictures: " + (withArt.length - failed) + " saved.");
+    }
+
+    // Album art for the music page: one small picture per album, shared by
+    // every song on it. Six at a time keeps a big library from crawling.
+    if (opts.covers && !(ui.signal && ui.signal.aborted)) {
+      const urls = new Set();
+      const songs = [
+        ...((data.likedSongs && data.likedSongs.tracks) || []),
+        ...((data.playlists && data.playlists.items) || []).flatMap(p => p.tracks || []),
+      ];
+      songs.forEach(t => t.albumImage && urls.add(t.albumImage));
+      ((data.albums && data.albums.items) || []).forEach(a => a.imageUrl && urls.add(a.imageUrl));
+      const list = [...urls];
+      let next = 0, done = 0, failed = 0;
+      const worker = async () => {
+        while (next < list.length && !(ui.signal && ui.signal.aborted)) {
+          const url = list[next++];
+          try {
+            const res = await fetchImpl(url, { signal: ui.signal || undefined });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            data.thumbs.push({ url, type: res.headers.get("Content-Type") || "image/jpeg",
+                               bytes: new Uint8Array(await res.arrayBuffer()) });
+          } catch (e) {
+            if (!(ui.signal && ui.signal.aborted)) failed++;
+          }
+          done++;
+          if (done % 10 === 0 || done === list.length) {
+            status({ part, parts, label: "Album pictures", done, total: list.length });
+          }
+        }
+      };
+      if (list.length) {
+        status({ part, parts, label: "Album pictures", done: 0, total: list.length });
+        await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker));
+        if (failed) {
+          data.warnings.push(failed + " album picture" + (failed === 1 ? "" : "s") +
+            " couldn't be downloaded, so some songs show a blank square on the music page.");
+        }
+        log("Album pictures: " + (list.length - failed) + " saved.");
+      }
     }
 
     // Stop pressed during the cover pictures: everything else is in, but

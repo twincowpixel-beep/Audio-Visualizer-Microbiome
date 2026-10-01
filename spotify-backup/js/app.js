@@ -15,54 +15,81 @@
   const { AuthError } = SpotifyAuth;
 
   // ===== House-style chrome ============================================
-  // Same muted-pill recipe as Radio Jungle's bootUI: each control has its
-  // own soft hue; frame, face, rim and label are derived from it.
-  function hslHex(h, s, l) {
-    h = ((h % 1) + 1) % 1;
-    const a = s * Math.min(l, 1 - l);
-    const f = n => {
-      const k = (n + h * 12) % 12;
-      const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-      return Math.round(c * 255).toString(16).padStart(2, "0");
-    };
-    return "#" + f(0) + f(8) + f(4);
-  }
-  function mutedStyle(h) {
-    const c = (s, l) => hslHex(h, s, l);
-    return {
-      frame:   c(0.30, 0.50),
-      fill:    c(0.22, 0.80),
-      fillHi:  c(0.18, 0.88),
-      fillLo:  c(0.32, 0.64),
-      outline: c(0.45, 0.16),
-      shine:   "#ffffff",
-      ink:     c(0.55, 0.13),
-    };
-  }
+  // Every control gets its own soft hue (see house.js); the background
+  // picker rotates the whole set, as Radio Jungle's palettes do.
   const HUE = {
     "app": 0.38,                      // Spotify-ish green window
     "login-btn": 0.38, "start-btn": 0.33, "download-btn": 0.58, "print-btn": 0.11,
     "stop-btn": 0.02, "logout-btn": 0.02, "logout2-btn": 0.02, "again-btn": 0.72,
     "copy-btn": 0.64, "save-id-btn": 0.33,
     "request-btn": 0.88, "send-request-btn": 0.88, "request-back-btn": 0.72, "request-done-back-btn": 0.72,
+    "bg-btn": 0.95, "stats-login-btn": 0.38, "live-relogin": 0.38,
+    // Stats cards each take their own colour so the page reads as a set of panels.
+    "card-artists": 0.95, "card-tracks": 0.58, "card-genres": 0.11, "card-recent": 0.72,
+    "card-h-artists": 0.95, "card-h-tracks": 0.58, "card-albums": 0.11, "card-h-time": 0.47,
+    "card-h-clock": 0.72, "card-h-week": 0.64,
   };
   const NOTICE_HUE = { error: 0.02, info: 0.11, ok: 0.33 };
-  let noticeFrame = null;
 
   function bootChrome() {
-    const win = mutedStyle(HUE.app);
-    new PixelFrame($("app"), { r: 10, border: 5, ...win });
-    document.querySelectorAll(".eb-btn").forEach(el => {
-      const s = mutedStyle(HUE[el.id] ?? 0.5);
-      const big = el.classList.contains("big");
-      new PixelButton(el, { r: big ? 12 : 10, border: 4, ...s });
-      el.style.color = s.ink;
+    House.frame($("app"), HUE.app, { r: 10, border: 5 });
+    document.querySelectorAll(".eb-btn").forEach(el => House.button(el, HUE[el.id] ?? 0.5));
+    document.querySelectorAll(".card").forEach(el => House.frame(el, HUE[el.id] ?? 0.5, { r: 8, border: 4 }));
+    House.frame($("notice"), NOTICE_HUE.error, { r: 8, border: 4 });
+    House.crt($("crt"));
+    House.initTooltip();
+  }
+
+  // ===== Background picker =============================================
+  function wireBackgrounds() {
+    const box = $("swatches");
+    const current = House.currentTheme();
+    House.THEMES.forEach(t => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "swatch";
+      b.style.setProperty("--a", t.swatch[0]);
+      b.style.setProperty("--b", t.swatch[1]);
+      b.dataset.tip = t.name;
+      b.setAttribute("aria-label", t.name);
+      b.setAttribute("aria-pressed", String(t.id === current.id));
+      b.addEventListener("click", () => {
+        box.querySelectorAll(".swatch").forEach(x => x.setAttribute("aria-pressed", "false"));
+        b.setAttribute("aria-pressed", "true");
+        House.setTheme(t.id);
+      });
+      box.append(b);
     });
-    noticeFrame = new PixelFrame($("notice"), { r: 8, border: 4, ...mutedStyle(NOTICE_HUE.error) });
-    // CRT panel: near-black phosphor screen inside a hard black rim.
-    new PixelFrame($("crt"), {
-      r: 6, border: 3, outline: "#111111", frame: "#111111", frameHi: "#111111", frameLo: "#111111",
-      fill: "#0a0f0a", fillHi: "#0a0f0a", fillLo: "#0a0f0a", noGloss: true, noSmudge: true,
+    House.setTheme(current.id);
+    $("bg-btn").addEventListener("click", () => {
+      const open = $("bg-picker").hidden;
+      $("bg-picker").hidden = !open;
+      $("bg-btn").setAttribute("aria-expanded", String(open));
+    });
+  }
+
+  // ===== Tabs ===========================================================
+  const TAB_KEY = "spotify-backup.tab";
+  function showTab(name) {
+    ["backup", "stats"].forEach(t => {
+      const on = t === name;
+      $("tab-" + t).hidden = !on;
+      $("tab-btn-" + t).setAttribute("aria-selected", String(on));
+      $("tab-btn-" + t).tabIndex = on ? 0 : -1;
+    });
+    $("app").classList.toggle("wide", name === "stats");
+    if (name === "stats") StatsUI.opened();
+  }
+  function wireTabs() {
+    const tabs = [$("tab-btn-backup"), $("tab-btn-stats")];
+    tabs.forEach((b, i) => {
+      b.addEventListener("click", () => showTab(i ? "stats" : "backup"));
+      b.addEventListener("keydown", e => {
+        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+        const next = tabs[(i + 1) % 2];
+        next.focus();
+        showTab(next === tabs[1] ? "stats" : "backup");
+      });
     });
   }
 
@@ -85,8 +112,7 @@
     $("notice-text").textContent = text;
     $("notice").setAttribute("role", kind === "error" ? "alert" : "status");
     $("notice").hidden = false;
-    noticeFrame.restyle(mutedStyle(NOTICE_HUE[kind] ?? NOTICE_HUE.info));
-    $("notice").style.color = mutedStyle(NOTICE_HUE[kind] ?? NOTICE_HUE.info).ink;
+    House.retint($("notice"), NOTICE_HUE[kind] ?? NOTICE_HUE.info);
   }
   function clearNotice() { $("notice").hidden = true; }
 
@@ -364,6 +390,7 @@
     if (data.albums) add(n(data.albums.items.length, "saved album"));
     if (data.artists) add(n(data.artists.items.length, "followed artist"));
     if (data.covers && data.covers.length) add(n(data.covers.length, "cover picture"));
+    showCoverStrip(data);
 
     const warn = $("done-warnings");
     warn.textContent = "";
@@ -380,6 +407,26 @@
 
     show("done");
     if (failure) notice(friendly(failure), "info"); else clearNotice();
+  }
+
+  let stripUrls = [];
+  function showCoverStrip(data) {
+    stripUrls.forEach(u => URL.revokeObjectURL(u));
+    stripUrls = [];
+    const box = $("done-covers");
+    box.textContent = "";
+    const names = new Map(((data.playlists && data.playlists.items) || []).map(p => [p.id, p.name]));
+    (data.covers || []).slice(0, 24).forEach((c, i) => {
+      const url = URL.createObjectURL(new Blob([c.bytes], { type: c.type }));
+      stripUrls.push(url);
+      const im = document.createElement("img");
+      im.src = url;
+      im.alt = names.get(c.playlistId) || "";
+      im.dataset.tip = names.get(c.playlistId) || "";
+      im.style.setProperty("--i", i);
+      box.append(im);
+    });
+    box.hidden = !box.childElementCount;
   }
 
   function download() {
@@ -404,21 +451,34 @@
 
   function logout(message) {
     SpotifyAuth.logout();
+    StatsUI.forget();
     result = null;
     show("login");
     notice(message || "Logged out. To remove this page's access to your Spotify completely, go to spotify.com/account/apps.", "info");
   }
 
   // ===== Boot ===========================================================
+  async function doLogin() {
+    clearNotice();
+    const problem = SpotifyAuth.addressProblem();
+    if (problem) { showTab("backup"); notice(problem); return; }
+    // Come back to whichever tab the login was started from.
+    try { sessionStorage.setItem(TAB_KEY, $("tab-stats").hidden ? "backup" : "stats"); } catch (e) { /* storage blocked */ }
+    try { await SpotifyAuth.login(); } catch (e) { showTab("backup"); notice(friendly(e)); }
+  }
+
   async function boot() {
     bootChrome();
+    wireBackgrounds();
+    wireTabs();
     wireSetup();
-    $("login-btn").addEventListener("click", async () => {
-      clearNotice();
-      const problem = SpotifyAuth.addressProblem();
-      if (problem) { notice(problem); return; }
-      try { await SpotifyAuth.login(); } catch (e) { notice(friendly(e)); }
+    StatsUI.init({
+      client,
+      friendly,
+      login: doLogin,
+      relogin: () => { SpotifyAuth.logout(); StatsUI.forget(); doLogin(); },
     });
+    $("login-btn").addEventListener("click", doLogin);
     $("start-btn").addEventListener("click", start);
     $("request-btn").addEventListener("click", showRequest);
     $("request-form").addEventListener("submit", sendRequest);
@@ -434,8 +494,14 @@
     $("logout2-btn").addEventListener("click", () => logout());
 
     const wantSetup = new URLSearchParams(location.search).has("setup");
+    let returnTab = "backup";
+    try { returnTab = sessionStorage.getItem(TAB_KEY) || "backup"; sessionStorage.removeItem(TAB_KEY); } catch (e) { /* storage blocked */ }
     try {
-      if (await SpotifyAuth.handleRedirect()) { await toChoose(); return; }
+      if (await SpotifyAuth.handleRedirect()) {
+        await toChoose();
+        if (returnTab === "stats" && SpotifyAuth.isLoggedIn()) showTab("stats");
+        return;
+      }
     } catch (e) {
       show("login");
       notice(friendly(e));

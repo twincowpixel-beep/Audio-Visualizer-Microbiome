@@ -26,6 +26,13 @@ Then open **http://127.0.0.1:8080/**. Use `127.0.0.1`, not `localhost`: Spotify 
 
 **For friends**, host the `spotify-backup/` folder anywhere that serves HTTPS: Netlify, Cloudflare Pages or GitHub Pages. You can deploy it the same way as `blob-playground/`. Add the hosted address to Redirect URIs, then send friends the link.
 
+## Stats tab and backgrounds
+
+- **My stats → Your top picks** uses the login: top artists and songs for 4 weeks / 6 months / 1 year, top genres (only if Spotify still sends genres), and the last 50 plays. People who logged in before this version need to log in again once to approve the two extra read-only permissions (`user-top-read`, `user-read-recently-played`).
+- **My stats → Minutes listened** reads Spotify's "Download your data" zip (Extended streaming history, or Account data for the last year) in the browser. The Web API has no minutes or play counts, so this is the only source for them. Nothing is uploaded.
+- **Background** (title bar) switches between backgrounds named after Radio Jungle's palettes, and rotates every button's hue to match. The choice is remembered per browser.
+- **Cover pictures** in the backup now also include album art, embedded once per album in `My Music.html`, so the page keeps its pictures offline.
+
 ## Putting it on Netlify (drag and drop)
 
 1. Zip the *contents* of this folder (`index.html` must be at the top of the zip), leaving out `tests/`. Or just drag the folder itself.
@@ -67,6 +74,9 @@ These are also the most likely reasons the Spotify login never worked in AudioBi
 | `js/backup.js` | Walks the account and builds the data object |
 | `js/exporters.js` | Text, CSV, printable HTML, JSON, READ ME |
 | `js/zip.js` | Small dependency-free ZIP writer |
+| `js/house.js` | Shared house-style chrome: pixel buttons and panels, backgrounds, tooltip |
+| `js/stats-live.js` / `js/history.js` | Stats from the Web API / from Spotify's data download |
+| `js/stats-ui.js` | The My stats tab |
 | `js/pixel-frame.js` | House-style `PixelFrame` / `PixelButton` (copy of `../js/pixel-frame.js`) |
 
 ## Tests
