@@ -20,7 +20,7 @@
   const HUE = {
     "app": 0.38,                      // Spotify-ish green window
     "login-btn": 0.38, "start-btn": 0.33, "download-btn": 0.58, "print-btn": 0.11,
-    "stop-btn": 0.02, "logout-btn": 0.02, "logout2-btn": 0.02, "again-btn": 0.72,
+    "stop-btn": 0.02, "logout-btn": 0.02, "logout2-btn": 0.02, "again-btn": 0.72, "continue-btn": 0.33,
     "copy-btn": 0.64, "save-id-btn": 0.33,
     "request-btn": 0.88, "send-request-btn": 0.88, "request-back-btn": 0.72, "request-done-back-btn": 0.72,
     "request-copy-btn": 0.64,
@@ -141,8 +141,9 @@
       }
       if (e.status === 429) {
         const mins = Math.max(1, Math.ceil((e.retryAfter || 60) / 60));
-        return "Spotify asked us to take a break for about " + mins + " minute" + (mins === 1 ? "" : "s") +
-               ". Everything saved so far is ready below; you can run the backup again later for the rest.";
+        return "Spotify asked this app to take a break for about " + mins + " minute" + (mins === 1 ? "" : "s") +
+               " (its speed limit is shared by everyone using the app). Everything saved so far is ready below. " +
+               "After the break, press \u201cContinue backup\u201d \u2014 it picks up where it stopped instead of starting over.";
       }
       if (e.network) return e.message;
       return "Spotify answered with an error (" + e.status + (e.message ? ": " + e.message : "") +
@@ -330,7 +331,26 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  // While Spotify makes us wait, count down on screen so it never looks frozen.
+  let waitTimer = 0;
+  function stopCountdown() { clearInterval(waitTimer); waitTimer = 0; }
+  function countdown(until) {
+    stopCountdown();
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+      const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, "0");
+      $("run-label").textContent = "Spotify asked us to slow down \u2014 carrying on in " + mm + ":" + ss;
+      $("run-part").textContent = "This is Spotify's speed limit, not a problem with your account. " +
+        "Leave the page open, or press Stop to keep what's saved so far.";
+      if (!left) stopCountdown();
+    };
+    tick();
+    waitTimer = setInterval(tick, 1000);
+    progressBar.set(null);
+  }
+
   function setStatus({ part, parts, label, done, total }) {
+    stopCountdown();
     let text = label;
     if (total) text += " — " + done.toLocaleString() + " of " + total.toLocaleString();
     else if (done) text += " — " + done.toLocaleString() + " so far";
@@ -386,8 +406,11 @@
 
   function preventLeave(e) { e.preventDefault(); e.returnValue = ""; }
 
-  async function start() {
-    const opts = options();
+  // The last run that stopped early, so "Continue backup" can pick it up.
+  let unfinished = null;     // { opts, data }
+
+  async function start(resume = null) {
+    const opts = resume ? resume.opts : options();
     if (!opts.liked && !opts.myPlaylists && !opts.followedPlaylists && !opts.albums && !opts.artists) {
       notice("Tick at least one thing to save.", "info");
       return;
@@ -410,13 +433,17 @@
     try {
       const api = client({
         signal,
-        onWait: sec => logLine("Spotify asked us to slow down — waiting " + sec + " second" + (sec === 1 ? "" : "s") + "…"),
+        onWait: (sec, until) => {
+          logLine("Spotify asked us to slow down \u2014 waiting " + (sec >= 90 ? Math.ceil(sec / 60) + " minutes" : sec + " seconds") + "\u2026");
+          countdown(until);
+        },
       });
-      await Backup.run(api, opts, { onStatus: setStatus, onLog: logLine, signal }, data);
+      await Backup.run(api, opts, { onStatus: setStatus, onLog: logLine, signal, resume: resume && resume.data }, data);
     } catch (e) {
       if (e.name === "AbortError") logLine("Stopped.");
       else { failure = e; logLine("Problem: " + friendly(e)); }
     } finally {
+      stopCountdown();
       removeEventListener("beforeunload", preventLeave);
       if (wake) wake.release().catch(() => {});
       controller = null;
@@ -429,6 +456,7 @@
       notice(failure ? friendly(failure) : "Stopped before anything was saved.");
       return;
     }
+    unfinished = data.complete ? null : { opts, data };
     await finish(data, failure);
   }
 
@@ -445,7 +473,8 @@
 
     $("done-title").textContent = data.complete
       ? "All done! Your backup is ready."
-      : "Stopped early — here's everything saved up to that point.";
+      : "Stopped early \u2014 here's everything saved up to that point.";
+    $("continue-btn").hidden = data.complete;
     const counts = $("done-counts");
     counts.textContent = "";
     const add = text => { const li = document.createElement("li"); li.textContent = text; counts.appendChild(li); };
@@ -554,7 +583,7 @@
       relogin: () => { SpotifyAuth.logout(); StatsUI.forget(); doLogin(); },
     });
     $("login-btn").addEventListener("click", doLogin);
-    $("start-btn").addEventListener("click", start);
+    $("start-btn").addEventListener("click", () => start());
     $("request-btn").addEventListener("click", showRequest);
     $("request-form").addEventListener("submit", sendRequest);
     $("request-copy-btn").addEventListener("click", copyRequest);
@@ -566,6 +595,7 @@
     $("download-btn").addEventListener("click", download);
     $("print-btn").addEventListener("click", openPrintable);
     $("again-btn").addEventListener("click", () => { clearNotice(); show("choose"); });
+    $("continue-btn").addEventListener("click", () => { if (unfinished) start(unfinished); });
     $("logout-btn").addEventListener("click", () => logout());
     $("logout2-btn").addEventListener("click", () => logout());
 

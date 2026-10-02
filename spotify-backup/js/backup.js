@@ -106,10 +106,19 @@
   }
 
   /** Normalise only the entries that arrived since last time. */
-  function catchUp(raw, out, norm) {
-    while (out.length < raw.length) out.push(norm(raw[out.length], out.length + 1));
+  function catchUp(raw, out, norm, start = 0) {
+    while (out.length < start + raw.length) out.push(norm(raw[out.length - start], out.length + 1));
     return out;
   }
+
+  /** Continuing a stopped run: keep what's already there up to the last
+      full page and ask Spotify only for the rest. Returns { kept, start }. */
+  function resumePoint(prevItems) {
+    if (!prevItems || !prevItems.length) return { kept: [], start: 0 };
+    const start = prevItems.length - (prevItems.length % PAGE);
+    return { kept: prevItems.slice(0, start), start };
+  }
+  const withOffset = (path, start) => path + (start ? "&offset=" + start : "");
 
   /** Smallest picture that's still at least 64px — a thumbnail for lists. */
   function smallImage(images) {
@@ -134,6 +143,9 @@
    * opts:  { liked, myPlaylists, followedPlaylists, albums, artists, covers }
    * ui:    { onStatus({ part, parts, label, done, total }), onLog(text) }
    * data:  pass an object in to keep partial results if the run throws.
+   * ui.resume: the data of a run that stopped early (rate limit, Stop,
+   *        lost connection). Finished parts are kept as they are and
+   *        unfinished lists pick up from where they got to.
    */
   async function run(api, opts, ui = {}, data = {}) {
     const status = ui.onStatus || (() => {});
@@ -167,12 +179,16 @@
       return read(await fetchImpl(url, { signal }));
     }
 
+    const prev = ui.resume || null;
     Object.assign(data, {
       format: "spotify-backup", formatVersion: 1,
       createdAt: new Date().toISOString(), complete: false,
       account: null, likedSongs: null, playlists: null, albums: null, artists: null, listening: null,
-      warnings: [], covers: [], thumbs: [],
+      warnings: [],
+      covers: prev && prev.covers ? prev.covers.slice() : [],
+      thumbs: prev && prev.thumbs ? prev.thumbs.slice() : [],
     });
+    if (prev) log("Continuing from where the last run stopped.");
 
     const wantPlaylists = opts.myPlaylists || opts.followedPlaylists;
     const parts = [opts.liked, wantPlaylists, opts.albums, opts.artists, opts.stats].filter(Boolean).length || 1;
@@ -190,15 +206,21 @@
     if (opts.liked) {
       part++;
       const raw = [];
-      data.likedSongs = { complete: false, total: null, tracks: [] };
-      status({ part, parts, label: "Liked songs", done: 0, total: null });
+      const before = prev && prev.likedSongs;
+      if (before && before.complete) {
+        data.likedSongs = before;
+        log("Liked songs: " + before.tracks.length.toLocaleString() + " kept from before.");
+      } else {
+      const { kept, start } = resumePoint(before && before.tracks);
+      data.likedSongs = { complete: false, total: before ? before.total : null, tracks: kept };
+      status({ part, parts, label: "Liked songs", done: start, total: data.likedSongs.total });
       try {
-        await api.getAll("/me/tracks?limit=" + PAGE, {
+        await api.getAll(withOffset("/me/tracks?limit=" + PAGE, start), {
           into: raw,
           onPage: (done, total) => {
             data.likedSongs.total = total;
-            catchUp(raw, data.likedSongs.tracks, normEntry);
-            status({ part, parts, label: "Liked songs", done, total });
+            catchUp(raw, data.likedSongs.tracks, normEntry, start);
+            status({ part, parts, label: "Liked songs", done: start + done, total });
           },
         });
         data.likedSongs.complete = true;
@@ -208,6 +230,7 @@
         data.likedSongs = null;
         data.warnings.push("Liked songs: Spotify wouldn't share them (" + e.status + "), so they're not in this backup.");
         log("Liked songs: Spotify said no (" + e.status + ") — skipped.");
+      }
       }
     }
 
@@ -239,8 +262,16 @@
         log("Found " + list.length + " playlist" + (list.length === 1 ? "" : "s") + ".");
 
         let followedRefusals = 0, followedBlocked = false;
+        const earlier = new Map(((prev && prev.playlists && prev.playlists.items) || []).map(x => [x.id, x]));
         for (let i = 0; i < list.length; i++) {
           const p = list[i];
+          const old = earlier.get(p.id);
+          // Finished last time (or refused last time): keep it as it was.
+          if (old && (old.complete || old.tracks === null)) {
+            data.playlists.items.push(Object.assign({}, old, { position: i + 1 }));
+            if (old.tracks === null && !old.mine && !old.collaborative && ++followedRefusals >= FOLLOWED_PROBES) followedBlocked = true;
+            continue;
+          }
           const mine = !!(p.owner && p.owner.id === data.account.id);
           const counts = p.items || p.tracks || {};   // renamed tracks → items in 2026
           const pl = {
@@ -272,11 +303,13 @@
             continue;
           }
           const raw = [];
+          const { kept, start } = resumePoint(old && old.tracks);
+          pl.tracks = kept;
           try {
-            await api.getAll("/playlists/" + encodeURIComponent(p.id) +
-                             "/items?limit=" + PAGE + "&additional_types=track,episode", {
+            await api.getAll(withOffset("/playlists/" + encodeURIComponent(p.id) +
+                             "/items?limit=" + PAGE + "&additional_types=track,episode", start), {
               into: raw,
-              onPage: () => catchUp(raw, pl.tracks, normEntry),
+              onPage: () => catchUp(raw, pl.tracks, normEntry, start),
             });
             pl.complete = true;
             if (!readable) followedRefusals = 0;
@@ -309,15 +342,21 @@
     if (opts.albums) {
       part++;
       const raw = [];
-      data.albums = { complete: false, total: null, items: [] };
-      status({ part, parts, label: "Saved albums", done: 0, total: null });
+      const before = prev && prev.albums;
+      if (before && before.complete) {
+        data.albums = before;
+        log("Saved albums: " + before.items.length.toLocaleString() + " kept from before.");
+      } else {
+      const { kept, start } = resumePoint(before && before.items);
+      data.albums = { complete: false, total: before ? before.total : null, items: kept };
+      status({ part, parts, label: "Saved albums", done: start, total: data.albums.total });
       try {
-        await api.getAll("/me/albums?limit=" + PAGE, {
+        await api.getAll(withOffset("/me/albums?limit=" + PAGE, start), {
           into: raw,
           onPage: (done, total) => {
             data.albums.total = total;
-            catchUp(raw, data.albums.items, normAlbum);
-            status({ part, parts, label: "Saved albums", done, total });
+            catchUp(raw, data.albums.items, normAlbum, start);
+            status({ part, parts, label: "Saved albums", done: start + done, total });
           },
         });
         data.albums.complete = true;
@@ -328,12 +367,17 @@
         data.warnings.push("Saved albums: Spotify wouldn't share them (" + e.status + "), so they're not in this backup.");
         log("Saved albums: Spotify said no (" + e.status + ") — skipped.");
       }
+      }
     }
 
     // ---- Followed artists -----------------------------------------------
     if (opts.artists) {
       part++;
       const raw = [];
+      if (prev && prev.artists && prev.artists.complete) {
+        data.artists = prev.artists;
+        log("Followed artists: " + data.artists.items.length.toLocaleString() + " kept from before.");
+      } else {
       data.artists = { complete: false, total: null, items: [] };
       status({ part, parts, label: "Followed artists", done: 0, total: null });
       try {
@@ -354,12 +398,17 @@
         data.warnings.push("Followed artists: Spotify wouldn't share them (" + e.status + "), so they're not in this backup.");
         log("Followed artists: Spotify said no (" + e.status + ") — skipped.");
       }
+      }
     }
 
     // ---- Top picks snapshot (for the viewer's Stats tab) ----------------
     // What Spotify says your top artists and songs are today, kept so the
     // backup's own stats page still has them later.
-    if (opts.stats && window.LiveStats) {
+    if (opts.stats && prev && prev.listening) {
+      part++;
+      data.listening = prev.listening;
+      log("Top picks: kept from before.");
+    } else if (opts.stats && window.LiveStats) {
       part++;
       status({ part, parts, label: "Your top picks", done: 0, total: null });
       try {
@@ -381,7 +430,8 @@
     // Spotify's image links will die with the account, so keep the pictures.
     // Not essential: any failure just leaves the link in the backup.
     if (opts.covers && data.playlists) {
-      const withArt = data.playlists.items.filter(p => p.imageUrl);
+      const have = new Set(data.covers.map(c => c.playlistId));     // kept from a run being continued
+      const withArt = data.playlists.items.filter(p => p.imageUrl && !have.has(p.id));
       let failed = 0;
       for (let i = 0; i < withArt.length; i++) {
         if (ui.signal && ui.signal.aborted) break;
@@ -415,6 +465,7 @@
       if (data.listening) {
         Object.values(data.listening.ranges).forEach(r => [...r.artists, ...r.tracks].forEach(x => x.image && urls.add(x.image)));
       }
+      data.thumbs.forEach(t => urls.delete(t.url));                  // kept from a run being continued
       const list = [...urls];
       let next = 0, done = 0, failed = 0;
       const worker = async () => {

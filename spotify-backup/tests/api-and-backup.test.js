@@ -56,15 +56,58 @@ test("get() gives up cleanly on a very long 429", async () => {
   await assert.rejects(api.get("/me"), e => e instanceof ApiError && e.status === 429 && e.retryAfter === 86400);
 });
 
-test("get() gives up if Spotify keeps rate-limiting without saying for how long", async () => {
+test("get() backs off when Spotify keeps rate-limiting, then gives up within the time budget", async () => {
+  const waits = [];
+  const api = createClient({
+    getToken: async () => "t", refreshToken: async () => {},
+    fetchImpl: async () => json({}, 429), sleep: noSleep,
+    onWait: s => waits.push(s), maxTotalWaitSec: 300,
+  });
+  await assert.rejects(api.get("/me"), e => e.status === 429 && e.retryAfter >= 60);
+  assert.deepEqual(waits, [5, 10, 20, 40, 60, 60, 60]);   // backs off, never waits past the budget
+  assert.ok(waits.reduce((a, b) => a + b, 0) <= 300);
+});
+
+test("requests are paced, and slow down further after a 429", async () => {
+  let clock = 0;
+  const starts = [];
+  let n = 0;
+  const api = createClient({
+    getToken: async () => "t", refreshToken: async () => {},
+    now: () => clock,
+    sleep: async ms => { clock += ms; },
+    fetchImpl: async () => { starts.push(clock); return n++ === 1 ? json({}, 429, { "Retry-After": "1" }) : json({}); },
+    minIntervalMs: 300,
+  });
+  await api.get("/a");
+  await api.get("/b");      // 429 once, then fine
+  await api.get("/c");
+  const gaps = starts.slice(1).map((t, i) => t - starts[i]);
+  assert.ok(gaps[0] >= 300, "second request waits its turn");
+  assert.ok(gaps[2] >= 600, "after a 429 the gap doubles");
+});
+
+test("Stop cuts a long wait short straight away", async () => {
+  const ctl = new AbortController();
+  const api = createClient({
+    getToken: async () => "t", refreshToken: async () => {},
+    fetchImpl: async () => json({}, 429, { "Retry-After": "200" }),
+    signal: ctl.signal, onWait: () => setTimeout(() => ctl.abort(), 20),
+  });
+  const t0 = Date.now();
+  await assert.rejects(api.get("/me"), e => e.name === "AbortError");
+  assert.ok(Date.now() - t0 < 2000);
+});
+
+test("a request that never answers times out and is retried, not left hanging", async () => {
   let calls = 0;
   const api = createClient({
     getToken: async () => "t", refreshToken: async () => {},
-    fetchImpl: async () => { calls++; return json({}, 429); },
-    sleep: noSleep,
+    sleep: noSleep, timeoutMs: 30,
+    fetchImpl: (url, init) => { calls++; return calls < 3 ? new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new DOMException("t", "AbortError")))) : Promise.resolve(json({ ok: 1 })); },
   });
-  await assert.rejects(api.get("/me"), e => e.status === 429);
-  assert.equal(calls, 9);
+  assert.deepEqual(await api.get("/me"), { ok: 1 });
+  assert.equal(calls, 3);
 });
 
 test("get() retries server errors and network blips, then succeeds", async () => {
@@ -280,4 +323,33 @@ test("pictures come through the site's relay when it works, straight from Spotif
     { fetchImpl: async () => { throw new TypeError("Failed to fetch"); } });
   assert.equal(none.covers.length + none.thumbs.length, 0);
   assert.ok(none.warnings.some(w => /links to them instead/.test(w)));
+});
+
+test("run() continues a stopped backup instead of starting over", async () => {
+  const prev = {
+    account: { id: "me", name: "Me" },
+    likedSongs: { complete: false, total: 120, tracks: Array.from({ length: 73 }, (_, i) => ({ title: "Old " + i, position: i + 1 })) },
+    playlists: { items: [
+      { id: "done", name: "Done", mine: true, complete: true, tracks: [{ title: "kept" }] },
+      { id: "half", name: "Half", mine: true, complete: false, tracks: Array.from({ length: 50 }, () => ({ title: "x" })) },
+    ] },
+    listening: { capturedAt: "x", ranges: {} },
+    covers: [], thumbs: [],
+  };
+  const api = fakeApi({
+    "/me/tracks?limit=50&offset=50": [{ items: Array.from({ length: 70 }, (_, i) => ({ added_at: "x", track: track(100 + i) })), total: 120 }],
+    "/me/playlists": [{ items: [{ id: "done", name: "Done", owner: { id: "me" } }, { id: "half", name: "Half", owner: { id: "me" } }] }],
+    "/playlists/half/items?limit=50&additional_types=track,episode&offset=50": [{ items: [{ added_at: "x", item: track(9) }] }],
+    "/me": { id: "me", display_name: "Me" },
+  });
+  const data = await window.Backup.run(api, { liked: true, myPlaylists: true, stats: true }, { resume: prev });
+  assert.equal(data.complete, true);
+  assert.equal(data.likedSongs.tracks.length, 120);              // 50 kept + 70 fetched from offset 50
+  assert.equal(data.likedSongs.tracks[49].title, "Old 49");
+  assert.equal(data.likedSongs.tracks[50].title, "Song 100");
+  assert.equal(data.likedSongs.tracks[50].position, 51);
+  assert.equal(data.playlists.items[0].tracks[0].title, "kept");
+  assert.equal(data.playlists.items[1].tracks.length, 51);
+  assert.ok(!api.requested.some(p => p.startsWith("/playlists/done")), "finished playlists aren't asked for again");
+  assert.equal(data.listening, prev.listening);
 });
