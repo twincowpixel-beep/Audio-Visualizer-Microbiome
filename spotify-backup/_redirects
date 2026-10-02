@@ -1,0 +1,14 @@
+# Spotify's picture servers don't let web pages download images (no CORS
+# header). These rewrites have Netlify fetch them server-side from the same
+# site, so backups can keep album art and playlist covers. Keep in step with
+# IMAGE_PROXY in js/backup.js (a test checks).
+/img/i/*               https://i.scdn.co/:splat  200
+/img/mosaic/*          https://mosaic.scdn.co/:splat  200
+/img/cdn-ak/*          https://image-cdn-ak.spotifycdn.com/:splat  200
+/img/cdn-fa/*          https://image-cdn-fa.spotifycdn.com/:splat  200
+/img/seed-mix/*        https://seed-mix-image.spotifycdn.com/:splat  200
+/img/blend/*           https://blend-playlist-covers.spotifycdn.com/:splat  200
+/img/pickasso/*        https://pickasso.spotifycdn.com/:splat  200
+/img/daily-mix/*       https://daily-mix.scdn.co/:splat  200
+/img/lineup/*          https://lineup-images.scdn.co/:splat  200
+/img/thisis/*          https://thisis-images.spotifycdn.com/:splat  200

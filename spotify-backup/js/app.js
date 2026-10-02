@@ -36,6 +36,10 @@
     House.frame($("app"), HUE.app, { r: 10, border: 5 });
     document.querySelectorAll(".eb-btn").forEach(el => House.button(el, HUE[el.id] ?? 0.5));
     document.querySelectorAll(".card").forEach(el => House.frame(el, HUE[el.id] ?? 0.5, { r: 8, border: 4 }));
+    // Tabs, step markers and pills are pixel buttons too, sunk in when selected.
+    document.querySelectorAll(".tab").forEach((el, i) => House.toggle(el, [0.38, 0.95][i] ?? 0.5));
+    document.querySelectorAll("#steps li").forEach((el, i) => House.toggle(el, [0.38, 0.33, 0.58, 0.11][i] ?? 0.5));
+    document.querySelectorAll(".pill").forEach(el => House.toggle(el, 0.11));
     House.frame($("notice"), NOTICE_HUE.error, { r: 8, border: 4 });
     House.frame($("bg-picker"), HUE["bg-btn"], { r: 8, border: 4 });
     House.crt($("crt"));
@@ -65,6 +69,8 @@
       });
     });
     House.setTheme(current.id);
+    Backdrop.start();
+    $("backdrop-controls").append(Backdrop.controls());
     $("bg-btn").addEventListener("click", () => {
       const open = $("bg-picker").hidden;
       $("bg-picker").hidden = !open;
@@ -478,15 +484,18 @@
     stripUrls = [];
     const box = $("done-covers");
     box.textContent = "";
-    const names = new Map(((data.playlists && data.playlists.items) || []).map(p => [p.id, p.name]));
-    (data.covers || []).slice(0, 24).forEach((c, i) => {
-      const url = URL.createObjectURL(new Blob([c.bytes], { type: c.type }));
-      stripUrls.push(url);
+    // Saved pictures where we have them, Spotify's own links otherwise.
+    const saved = new Map((data.covers || []).map(c => [c.playlistId, c]));
+    ((data.playlists && data.playlists.items) || []).filter(p => saved.has(p.id) || p.imageUrl).slice(0, 24).forEach((p, i) => {
+      const c = saved.get(p.id);
+      let url = p.imageUrl;
+      if (c) { url = URL.createObjectURL(new Blob([c.bytes], { type: c.type })); stripUrls.push(url); }
       const im = document.createElement("img");
       im.src = url;
-      im.alt = names.get(c.playlistId) || "";
-      im.dataset.tip = names.get(c.playlistId) || "";
+      im.alt = p.name;
+      im.dataset.tip = p.name;
       im.style.setProperty("--i", i);
+      im.addEventListener("error", () => im.remove(), { once: true });
       box.append(im);
     });
     box.hidden = !box.childElementCount;

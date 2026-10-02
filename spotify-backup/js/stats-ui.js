@@ -128,7 +128,7 @@
     const setTutorial = open => {
       $("tutorial-body").hidden = !open;
       toggle.setAttribute("aria-expanded", String(open));
-      toggle.textContent = open ? "Hide" : "Show me how";
+      House.setLabel(toggle, open ? "Hide" : "Show me how");
     };
     toggle.addEventListener("click", () => setTutorial($("tutorial-body").hidden));
     deps.setTutorial = setTutorial;

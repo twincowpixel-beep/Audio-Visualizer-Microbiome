@@ -136,6 +136,7 @@
         onPick(value);
       });
       box.append(b);
+      if (window.House) House.toggle(b, 0.11);
     });
   }
 
@@ -161,6 +162,14 @@
 
   /** Wire a drop zone + file input to onFiles([...File]). */
   function dropZone(zone, input, onFiles) {
+    // The browser's own file button can't be styled; hide it and offer a
+    // house button that opens the same picker.
+    input.classList.add("visually-hidden");
+    const pick = el("button", "eb-btn slim drop-pick", "Choose file");
+    pick.type = "button";
+    pick.addEventListener("click", e => { e.preventDefault(); input.click(); });
+    zone.append(pick);
+    if (window.House) House.button(pick, 0.58);
     input.addEventListener("change", () => { if (input.files.length) onFiles([...input.files]); });
     ["dragenter", "dragover"].forEach(t => zone.addEventListener(t, e => { e.preventDefault(); zone.classList.add("over"); }));
     ["dragleave", "drop"].forEach(t => zone.addEventListener(t, () => zone.classList.remove("over")));

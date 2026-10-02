@@ -253,3 +253,31 @@ test("run() de-duplicates playlists and respects the mine/followed choices", asy
   const data = await window.Backup.run(api, { myPlaylists: true });
   assert.deepEqual(data.playlists.items.map(p => p.name), ["Mine"]);
 });
+
+test("pictures come through the site's relay when it works, straight from Spotify when it doesn't", async () => {
+  const img = (type = "image/jpeg") => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "Content-Type": type } });
+  const base = {
+    "/me/playlists": [{ items: [{ id: "p1", name: "P", owner: { id: "me" }, images: [{ url: "https://i.scdn.co/image/cover", width: 300 }] }] }],
+    "/playlists/p1/items": [{ items: [{ added_at: "x", item: track(1, { album: { name: "LP", images: [{ url: "https://i.scdn.co/image/alb", width: 64 }] } }) }] }],
+    "/me": { id: "me", display_name: "Me" },
+  };
+  // 1. On Netlify: the relay answers, Spotify is never asked directly.
+  const asked = [];
+  const viaRelay = await window.Backup.run(fakeApi(base), { myPlaylists: true, covers: true },
+    { fetchImpl: async url => { asked.push(url); return url.startsWith("/img/i/") ? img() : new Response("no", { status: 403 }); } });
+  assert.deepEqual(asked.sort(), ["/img/i/image/alb", "/img/i/image/cover"]);
+  assert.equal(viaRelay.covers.length, 1);
+  assert.equal(viaRelay.thumbs.length, 1);
+  assert.equal(viaRelay.warnings.length, 0);
+
+  // 2. No relay (local testing): HTML 404s from the relay, the direct fetch works.
+  const direct = await window.Backup.run(fakeApi(base), { myPlaylists: true, covers: true },
+    { fetchImpl: async url => url.startsWith("/img/") ? new Response("<html>", { status: 404, headers: { "Content-Type": "text/html" } }) : img() });
+  assert.equal(direct.covers.length + direct.thumbs.length, 2);
+
+  // 3. Neither: pictures are left out with a warning that says they'll be linked.
+  const none = await window.Backup.run(fakeApi(base), { myPlaylists: true, covers: true },
+    { fetchImpl: async () => { throw new TypeError("Failed to fetch"); } });
+  assert.equal(none.covers.length + none.thumbs.length, 0);
+  assert.ok(none.warnings.some(w => /links to them instead/.test(w)));
+});

@@ -6,7 +6,7 @@
     <!-- The login code sits in the address bar for a moment; never leak it. -->
     <meta name="referrer" content="no-referrer">
     <!-- This page holds a Spotify login, so it may only talk to Spotify. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-S3rAXUPJh+eA7r9e+yirurT68FB1l1Bk52tiAS5PXgI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-zvEac1EC4KUwR6VH2iBrEfXDpDNjnmUVIo05yBdNx0w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Spotify Backup</title>
     <link rel="stylesheet" href="css/shared.css">
     <style>
@@ -22,12 +22,9 @@
             list-style: none; margin: 0 0 6px; padding: 0;
             display: flex; flex-wrap: wrap; gap: 8px;
         }
-        .steps li {
-            padding: 3px 9px; border: 2px solid var(--os-black); background: var(--os-white);
-            font-size: 13px; letter-spacing: 0.06em; color: var(--muted);
-        }
-        .steps li.active { background: var(--os-black); color: var(--os-white); }
-        .steps li.past { color: var(--os-black); }
+        /* House.toggle() markers — dark and sunk in for the current step. */
+        .steps li { position: relative; padding: 8px 12px 10px; font-size: 16px; line-height: 16px; letter-spacing: 0; }
+        .steps li > * { position: relative; z-index: 1; }
 
         /* ===== Notice (errors / info) — PixelFrame-framed =============== */
         .notice { position: relative; padding: 14px 18px; margin: 14px 0; }
@@ -61,7 +58,7 @@
             height: 150px; overflow-y: auto;
             color: var(--term-green);
             text-shadow: 0 0 4px rgba(51,255,102,0.45);
-            font: 13px/1.6 var(--font-pixel); letter-spacing: 0.05em;
+            font: 16px/24px var(--font-pixel); letter-spacing: 0;
             word-break: break-word;
         }
         .crt::after {   /* faint scanlines */
@@ -111,6 +108,7 @@
         <div id="bg-picker" class="bg-picker" hidden>
             <p>Pick a background</p>
             <div id="swatches" class="swatches" role="group" aria-label="Backgrounds"></div>
+            <div id="backdrop-controls"></div>
         </div>
         <div class="tabs" role="tablist" aria-label="Sections">
             <button id="tab-btn-backup" class="tab" role="tab" type="button" aria-selected="true" aria-controls="tab-backup">Backup</button>
@@ -318,6 +316,7 @@
     <script src="js/pixel-frame.js"></script>
     <script src="js/house.js"></script>
     <script src="js/dither-bar.js"></script>
+    <script src="js/backdrop.js"></script>
     <script src="js/spotify-auth.js"></script>
     <script src="js/spotify-api.js"></script>
     <script src="js/backup.js"></script>

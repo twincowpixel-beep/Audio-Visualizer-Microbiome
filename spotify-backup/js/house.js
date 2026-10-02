@@ -6,7 +6,10 @@
    the same trick Radio Jungle's applyButtonPalette() plays when you pick
    a world palette. Also owns the shared dark tooltip slab.
 
-     House.button(el, hue)        PixelButton in the muted-pill recipe
+     House.button(el, hue)        glossy PixelButton in the muted-pill recipe
+     House.toggle(el, hue)        same, sunk + dark when aria-pressed/selected
+     House.knob(el, opts)         pixel rotary dial (role=slider)
+     House.setLabel(el, text)     relabel a house button safely
      House.frame(el, hue, opts)   PixelFrame panel (window, notice, card)
      House.crt(el)                near-black phosphor screen
      House.retint(el, hue)        change one element's base hue
@@ -35,6 +38,8 @@
       outline: c(0.45, 0.16),
       shine:   "#ffffff",
       ink:     c(0.55, 0.13),
+      fillOn:  c(0.40, 0.30),   // a selected tab/pill: sunk in, dark face…
+      inkOn:   "#ffffff",       // …with white type
     };
   }
 
@@ -52,58 +57,6 @@
     { id: "night",     name: "Night CRT", hue: 0.38, swatch: ["#0a0f0a", "#33ff66"] },
   ];
   const THEME_KEY = "spotify-backup.theme";
-
-  const registry = [];      // { el, pb, hue, kind }
-  let shift = 0;
-
-  function paint(entry) {
-    const s = mutedStyle(entry.hue + shift);
-    entry.pb.restyle({ frame: s.frame, fill: s.fill, fillHi: s.fillHi, fillLo: s.fillLo, outline: s.outline, shine: s.shine });
-    entry.el.style.color = s.ink;
-  }
-
-  function button(el, hue = 0.5, opts = {}) {
-    const big = el.classList.contains("big");
-    const entry = { el, hue, pb: new PixelButton(el, { r: big ? 12 : 10, border: 4, ...opts }) };
-    registry.push(entry);
-    paint(entry);
-    return entry.pb;
-  }
-
-  function frame(el, hue = 0.5, opts = {}) {
-    const entry = { el, hue, pb: new PixelFrame(el, { r: 10, border: 5, ...opts }) };
-    registry.push(entry);
-    paint(entry);
-    return entry.pb;
-  }
-
-  // Not registered: the CRT stays a CRT whatever the background.
-  function crt(el) {
-    return new PixelFrame(el, {
-      r: 6, border: 3, outline: "#111111", frame: "#111111", frameHi: "#111111", frameLo: "#111111",
-      fill: "#0a0f0a", fillHi: "#0a0f0a", fillLo: "#0a0f0a", noGloss: true, noSmudge: true,
-    });
-  }
-
-  function retint(el, hue) {
-    const entry = registry.find(r => r.el === el);
-    if (entry) { entry.hue = hue; paint(entry); }
-  }
-
-  function currentTheme() {
-    let id = "dots";
-    try { id = localStorage.getItem(THEME_KEY) || "dots"; } catch (e) { /* storage blocked */ }
-    return THEMES.find(t => t.id === id) || THEMES[0];
-  }
-
-  function setTheme(id) {
-    const theme = THEMES.find(t => t.id === id) || THEMES[0];
-    THEMES.forEach(t => document.body.classList.toggle("bg-" + t.id, t === theme));
-    shift = theme.hue == null ? 0 : theme.hue * 0.5;
-    registry.forEach(paint);
-    try { localStorage.setItem(THEME_KEY, theme.id); } catch (e) { /* storage blocked */ }
-    document.dispatchEvent(new CustomEvent("house:theme", { detail: theme }));
-  }
 
   // ---- dithering ----------------------------------------------------------
   // 4x4 Bayer matrix: the ordered-dither pattern used for every gradient
@@ -131,41 +84,199 @@
     return ctx.createPattern(c, "no-repeat");
   }
 
-  /** Background picker tile: the house PixelButton (rounded bevel, drop
-      shadow, sink on press) with the background's two colours dithered
-      into its face, a dithered gloss along the top, and a ✓ when chosen. */
-  class SwatchButton extends PixelButton {
-    constructor(el, colors, hue) {
-      super(el, { r: 9, border: 4, ...mutedStyle(hue) });
-      this.colors = colors;
+  // ---- buttons ---------------------------------------------------------------
+  /** The AudioBiome button: PixelButton's rounded pixel bevel and drop
+      shadow, plus a dithered gloss along the top edge, and an optional
+      "selected" state that stays sunk in with a dark face (tabs, pills). */
+  class HouseButton extends PixelButton {
+    constructor(el, opts) {
+      super(el, opts);
       this.selected = false;
+      this.ready = true;
       this.draw();
     }
     setSelected(on) {
+      if (this.selected === on) return;
       this.selected = on;
-      if (this.labelEl) this.labelEl.textContent = on ? "✓" : "";
       this.draw();
     }
+    faceFill() { return this.selected && this.opts.fillOn ? this.opts.fillOn : this.opts.fill; }
     draw() {
-      if (!this.colors) return;   // PixelButton's constructor draws before we're set up
+      if (!this.ready) return;          // PixelButton's constructor draws before we're set up
       const w = this.el.clientWidth, h = this.el.clientHeight;
       if (w < 6 || h < 6) return;
-      this.opts.fill = ditherPattern(this.ctx, w, h, this.colors[0], this.colors[1]);
-      const wasPressed = this._pressed;
-      this._pressed = this._pressed || this.selected;     // chosen = sunk in, like a held key
+      const wasPressed = this._pressed, fill = this.opts.fill;
+      this._pressed = wasPressed || this.selected;
+      this.opts.fill = this.faceFill(w, h);
       super.draw();
-      // Dithered gloss on the top-left of the face (PixelFrame's shine).
-      const ox = this._pressed ? 2 : 0, b = this.opts.border, r = this.opts.r;
-      const ctx = this.ctx;
-      for (let x = 0; x < Math.min(18, w - 2 * r); x += 2) {
-        ctx.fillStyle = this.opts.shine;
-        ctx.fillRect(ox + r + x, ox + b + 1, 1, 1);
-        if (x < 10) ctx.fillRect(ox + r + x + 1, ox + b + 2, 1, 1);
+      this.opts.fill = fill;
+      // Dithered gloss: a run of shine pixels along the top-left bevel.
+      const o = this._pressed ? 2 : 0, r = this.opts.r, ctx = this.ctx;
+      const run = Math.max(0, Math.min(26, Math.floor((w - 2 * r) * 0.45)));
+      ctx.fillStyle = this.selected ? "rgba(255,255,255,0.45)" : this.opts.shine;
+      for (let x = 0; x < run; x += 2) {
+        ctx.fillRect(o + r + x, o + 2, 1, 1);
+        if (x < run * 0.6) ctx.fillRect(o + r + x + 1, o + 3, 1, 1);
       }
-      ctx.fillRect(ox + b + 1, ox + r, 1, 1);
-      ctx.fillRect(ox + b + 1, ox + r + 2, 1, 1);
+      for (let y = 0; y < Math.min(6, h - 2 * r); y += 2) ctx.fillRect(o + 2, o + r + y, 1, 1);
       this._pressed = wasPressed;
     }
+  }
+
+  const registry = [];      // { el, pb, hue }
+  let shift = 0;
+
+  function paint(entry) {
+    const s = mutedStyle(entry.hue + shift);
+    entry.pb.restyle({ frame: s.frame, fill: s.fill, fillHi: s.fillHi, fillLo: s.fillLo, outline: s.outline,
+                       shine: s.shine, fillOn: s.fillOn });
+    if (!entry.keepInk) entry.el.style.color = entry.pb.selected ? s.inkOn : s.ink;
+  }
+  function register(entry) {
+    // Forget elements that have left the page (re-rendered lists, cards).
+    for (let i = registry.length - 1; i >= 0; i--) if (!registry[i].el.isConnected) registry.splice(i, 1);
+    registry.push(entry);
+    paint(entry);
+    return entry.pb;
+  }
+
+  function button(el, hue = 0.5, opts = {}) {
+    const big = el.classList.contains("big");
+    return register({ el, hue, pb: new HouseButton(el, { r: big ? 12 : 10, border: 4, ...opts }) });
+  }
+
+  /** A button with an on/off look (tabs, pills, step markers). It follows
+      the element's own aria-pressed / aria-selected / aria-current / .active,
+      so code that flips those never has to know about the drawing. */
+  function toggle(el, hue = 0.5, opts = {}) {
+    const entry = { el, hue, pb: new HouseButton(el, { r: 8, border: 3, ...opts }) };
+    const isOn = () => el.getAttribute("aria-pressed") === "true" || el.getAttribute("aria-selected") === "true" ||
+      el.hasAttribute("aria-current") || el.classList.contains("active");
+    entry.pb.selected = isOn();
+    register(entry);
+    new MutationObserver(() => { entry.pb.setSelected(isOn()); paint(entry); })
+      .observe(el, { attributes: true, attributeFilter: ["aria-pressed", "aria-selected", "aria-current", "class"] });
+    return entry.pb;
+  }
+
+  /** Change a house button's text without wiping its canvas. */
+  function setLabel(el, text) {
+    const label = el.querySelector(":scope > .pf-label");
+    (label || el).textContent = text;
+  }
+
+  /** PixelFrame's look without a full-size canvas. A tall panel's canvas
+      was megapixels big and was reallocated and repainted on every resize
+      (switching tabs widens the window), which made the Stats tab stutter.
+      Instead the frame is drawn once into a small (2S+1)² tile and cut
+      into nine pieces: corners stay put, the 1-pixel edge strips and the
+      centre stretch (crisply) — the frame only repeats along its edges, so
+      it looks the same. Pieces are cached per colour and size. */
+  const skinCache = new Map();
+  class SkinFrame {
+    constructor(el, opts) {
+      this.el = el;
+      this.opts = Object.assign({
+        r: 10, border: 5, outline: "#7a2c50", frame: "#f0a0c8", frameHi: null, frameLo: null,
+        fill: "#2a1228", fillHi: "#3c1c3a", fillLo: "#170810", shine: "#ffffff", shineWidth: 44,
+      }, opts);
+      this.S = 0;
+      if (getComputedStyle(el).position === "static") el.style.position = "relative";
+      el.style.imageRendering = "pixelated";
+      this._ro = new ResizeObserver(() => this.draw());
+      this._ro.observe(el);
+      this.draw();
+    }
+    restyle(opts) { Object.assign(this.opts, opts); this.S = 0; this.draw(); }
+    pieces(S) {
+      const o = this.opts;
+      const key = [S, o.r, o.border, o.outline, o.frame, o.fill, o.fillHi, o.fillLo, o.shine, o.noGloss, o.noSmudge].join("|");
+      if (skinCache.has(key)) return skinCache.get(key);
+      const N = 2 * S + 1;
+      const canvas = document.createElement("canvas");
+      // Borrow PixelFrame's own drawing code on an off-screen tile.
+      const painter = Object.create(PixelFrame.prototype);
+      Object.assign(painter, { el: { clientWidth: N, clientHeight: N }, canvas, ctx: canvas.getContext("2d"),
+        opts: Object.assign({}, o, {
+          frameHi: o.frameHi || PixelFrame.prototype._mix(o.frame, "#ffffff", 0.45),
+          frameLo: o.frameLo || PixelFrame.prototype._mix(o.frame, "#000000", 0.45),
+        }) });
+      painter.draw();
+      const cut = (x, y, w, h) => {
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(canvas, x, y, w, h, 0, 0, w, h);
+        return "url(" + c.toDataURL() + ")";
+      };
+      const p = {
+        tl: cut(0, 0, S, S), tr: cut(S + 1, 0, S, S), bl: cut(0, S + 1, S, S), br: cut(S + 1, S + 1, S, S),
+        t: cut(S, 0, 1, S), b: cut(S, S + 1, 1, S), l: cut(0, S, S, 1), r: cut(S + 1, S, S, 1), c: cut(S, S, 1, 1),
+      };
+      skinCache.set(key, p);
+      return p;
+    }
+    draw() {
+      const w = this.el.clientWidth, h = this.el.clientHeight;
+      if (w < 8 || h < 8) return;
+      const S = Math.max(this.opts.r + 2, Math.min(56, Math.floor(Math.min(w, h) / 2) - 1));
+      if (S === this.S) return;          // same size class: the pieces already fit
+      this.S = S;
+      const p = this.pieces(S), st = this.el.style, s = S + "px", mid = "calc(100% - " + 2 * S + "px)";
+      st.backgroundImage = [p.tl, p.tr, p.bl, p.br, p.t, p.b, p.l, p.r, p.c].join(",");
+      st.backgroundPosition = "left top,right top,left bottom,right bottom," + s + " top," + s + " bottom,left " + s + ",right " + s + "," + s + " " + s;
+      st.backgroundSize = [s + " " + s, s + " " + s, s + " " + s, s + " " + s, mid + " " + s, mid + " " + s, s + " " + mid, s + " " + mid, mid + " " + mid].join(",");
+      st.backgroundRepeat = "no-repeat";
+      st.backgroundColor = "transparent";
+    }
+  }
+
+  function frame(el, hue = 0.5, opts = {}) {
+    return register({ el, hue, pb: new SkinFrame(el, { r: 10, border: 5, ...opts }) });
+  }
+
+  // Not registered: the CRT stays a CRT whatever the background.
+  function crt(el) {
+    return new PixelFrame(el, {
+      r: 6, border: 3, outline: "#111111", frame: "#111111", frameHi: "#111111", frameLo: "#111111",
+      fill: "#0a0f0a", fillHi: "#0a0f0a", fillLo: "#0a0f0a", noGloss: true, noSmudge: true,
+    });
+  }
+
+  function retint(el, hue) {
+    const entry = registry.find(r => r.el === el);
+    if (entry) { entry.hue = hue; paint(entry); }
+  }
+
+  function currentTheme() {
+    let id = "dots";
+    try { id = localStorage.getItem(THEME_KEY) || "dots"; } catch (e) { /* storage blocked */ }
+    return THEMES.find(t => t.id === id) || THEMES[0];
+  }
+
+  function setTheme(id) {
+    const theme = THEMES.find(t => t.id === id) || THEMES[0];
+    THEMES.forEach(t => document.body.classList.toggle("bg-" + t.id, t === theme));
+    shift = theme.hue == null ? 0 : theme.hue * 0.5;
+    for (let i = registry.length - 1; i >= 0; i--) if (!registry[i].el.isConnected) registry.splice(i, 1);
+    registry.forEach(paint);
+    try { localStorage.setItem(THEME_KEY, theme.id); } catch (e) { /* storage blocked */ }
+    document.dispatchEvent(new CustomEvent("house:theme", { detail: theme }));
+  }
+
+  /** Background picker tile: a HouseButton with the background's two
+      colours dithered into its face, and a ✓ when chosen. */
+  class SwatchButton extends HouseButton {
+    constructor(el, colors, hue) {
+      super(el, { r: 9, border: 4, ...mutedStyle(hue) });
+      this.colors = colors;
+      this.draw();
+    }
+    setSelected(on) {
+      if (this.labelEl) this.labelEl.textContent = on ? "✓" : "";
+      this.selected = !on;            // force a redraw even if unchanged
+      super.setSelected(on);
+    }
+    faceFill(w, h) { return this.colors ? ditherPattern(this.ctx, w, h, this.colors[0], this.colors[1]) : this.opts.fill; }
   }
 
   function swatch(el, theme) {
@@ -173,6 +284,95 @@
     el.style.color = theme.id === "night" ? "#33ff66" : "#111111";
     return pb;
   }
+
+  // ---- dial ------------------------------------------------------------------
+  /** A chunky pixel rotary knob, like the radio's volume/tune knobs in Radio
+      Jungle. Drag up/down (or sideways), scroll, or use the arrow keys.
+      opts: { min, max, step, value, hue, label, format(v), onChange(v) } */
+  function knob(el, opts) {
+    const o = Object.assign({ min: 0, max: 1, step: 0.05, value: 0.5, hue: 0.11, label: "", format: v => String(v) }, opts);
+    const G = 22, SCALE = 2;                  // a 22×22 pixel sprite drawn at 2×
+    el.classList.add("knob");
+    el.tabIndex = 0;
+    el.setAttribute("role", "slider");
+    el.setAttribute("aria-label", o.label);
+    el.setAttribute("aria-valuemin", String(o.min));
+    el.setAttribute("aria-valuemax", String(o.max));
+    const cv = document.createElement("canvas");
+    cv.width = G; cv.height = G;
+    cv.style.width = G * SCALE + "px"; cv.style.height = G * SCALE + "px";
+    cv.className = "knob-face";
+    const out = document.createElement("span");
+    out.className = "knob-value";
+    el.append(cv, out);
+    const ctx = cv.getContext("2d");
+    let value = o.value;
+
+    function draw() {
+      const s = mutedStyle(o.hue + shift);
+      const [fr, fg, fb] = rgb(s.fill), [lr, lg, lb] = rgb(s.fillLo), [hr, hg, hb] = rgb(s.fillHi);
+      const [or, og, ob] = rgb(s.outline), [kr, kg, kb] = rgb(s.frame);
+      const img = ctx.createImageData(G, G), d = img.data, c = (G - 1) / 2;
+      const t = (value - o.min) / (o.max - o.min);
+      const ang = (-135 + t * 270) * Math.PI / 180;
+      for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
+        const dx = x - c, dy = y - c, r = Math.sqrt(dx * dx + dy * dy);
+        let col = null;
+        if (r <= c + 0.2) col = [or, og, ob];                                     // rim
+        if (r <= c - 1) col = [kr, kg, kb];                                       // coloured ring
+        if (r <= c - 3) {
+          // Face lit from the top-left, shading resolved by dither.
+          const lit = 0.5 - (dx + dy) / (2 * c) * 0.6;
+          col = lit > bayer(x, y) + 0.2 ? [hr, hg, hb] : lit < bayer(x, y) - 0.25 ? [lr, lg, lb] : [fr, fg, fb];
+        }
+        // Tick marks around the ring every 45° of the 270° sweep.
+        if (r > c - 3 && r <= c - 1) {
+          const a = Math.atan2(dx, -dy) * 180 / Math.PI;
+          for (let k = 0; k <= 6; k++) { const ta = -135 + k * 45; if (Math.abs(a - ta) < 7) col = [or, og, ob]; }
+        }
+        if (col) { const i = (y * G + x) * 4; d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255; }
+      }
+      // Pointer: a 2-pixel line from the centre toward the value.
+      for (let k = 1; k <= c - 4; k += 0.5) {
+        const px = Math.round(c + Math.sin(ang) * k), py = Math.round(c - Math.cos(ang) * k);
+        for (const [ax, ay] of [[px, py], [px + 1, py]]) {
+          if (ax < 0 || ax >= G) continue;
+          const i = (py * G + ax) * 4; d[i] = or; d[i + 1] = og; d[i + 2] = ob; d[i + 3] = 255;
+        }
+      }
+      // Gloss pixels, top-left of the face.
+      [[6, 5], [8, 4], [10, 4], [5, 7]].forEach(([x, y]) => { const i = (y * G + x) * 4; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; });
+      ctx.putImageData(img, 0, 0);
+      out.textContent = o.format(value);
+      el.setAttribute("aria-valuenow", String(value));
+      el.setAttribute("aria-valuetext", o.format(value));
+    }
+    function set(v, fire = true) {
+      const n = Math.round(Math.min(o.max, Math.max(o.min, v)) / o.step) * o.step;
+      value = +n.toFixed(4);
+      draw();
+      if (fire) o.onChange(value);
+    }
+    let drag = null;
+    cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, v: value }; cv.setPointerCapture(e.pointerId); e.preventDefault(); });
+    cv.addEventListener("pointermove", e => {
+      if (!drag) return;
+      const moved = (drag.y - e.clientY) + (e.clientX - drag.x);
+      set(drag.v + moved / 120 * (o.max - o.min));
+    });
+    cv.addEventListener("pointerup", () => { drag = null; });
+    cv.addEventListener("wheel", e => { e.preventDefault(); set(value + (e.deltaY < 0 ? o.step : -o.step)); }, { passive: false });
+    el.addEventListener("keydown", e => {
+      const k = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
+      if (k) { e.preventDefault(); set(value + k * o.step); }
+      if (e.key === "Home") set(o.min);
+      if (e.key === "End") set(o.max);
+    });
+    document.addEventListener("house:theme", draw);
+    draw();
+    return { set: v => set(v, false), get: () => value };
+  }
+
 
   // ---- shared tooltip: one dark pixel slab under whatever has data-tip ----
   let tipEl = null;
@@ -216,6 +416,6 @@
     document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
   }
 
-  window.House = { hslHex, mutedStyle, THEMES, button, frame, crt, retint, setTheme, currentTheme, initTooltip,
-                   swatch, bayer, rgb };
+  window.House = { hslHex, mutedStyle, THEMES, button, toggle, setLabel, frame, crt, retint, setTheme, currentTheme, initTooltip,
+                   swatch, knob, bayer, rgb };
 })();

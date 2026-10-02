@@ -55,3 +55,28 @@ test("index.html allows exactly the current viewer script (re-run tools/csp-hash
   const { viewerHash } = require("../tools/csp-hash.js");
   assert.ok(read("index.html").includes("script-src 'self' " + viewerHash() + ";"));
 });
+
+test("pictures that couldn't be saved are linked from Spotify instead (and only safe links)", () => {
+  const d = sample();
+  d.thumbs = [];
+  d.covers = [];
+  d.playlists.items[0].imageUrl = "https://mosaic.scdn.co/640/abc";
+  d.likedSongs.tracks[0].albumImage = "https://i.scdn.co/image/ab67";
+  d.likedSongs.tracks[1].albumImage = "https://evil.example.com/x.jpg\")}body{display:none";
+  const html = X.viewerHtml(d, { assets });
+  const data = JSON.parse(html.match(/id="music-data">([\s\S]*?)<\/script>/)[1]);
+  assert.equal(data.pictures.covers.p1, "r0");
+  assert.equal(data.pictures.art["https://i.scdn.co/image/ab67"], "r1");
+  assert.equal(data.pictures.art[d.likedSongs.tracks[1].albumImage], undefined);
+  assert.match(html, /\.r1\{background-image:url\("https:\/\/i\.scdn\.co\/image\/ab67"\)\}/);
+  assert.doesNotMatch(html.match(/<style>([\s\S]*?)<\/style>/)[1], /evil\.example/, "never put into CSS");
+  assert.match(html, /img-src data: blob: https:\/\/\*\.scdn\.co https:\/\/\*\.spotifycdn\.com/);
+});
+
+test("_redirects relays every Spotify picture host the backup knows", () => {
+  require("../js/backup.js");
+  const redirects = read("_redirects");
+  for (const [host, prefix] of Object.entries(window.Backup.IMAGE_PROXY)) {
+    assert.match(redirects, new RegExp("^" + prefix.replace(/\//g, "\\/") + "\\*\\s+https:\\/\\/" + host.replace(/\./g, "\\.") + "\\/:splat\\s+200$", "m"));
+  }
+});

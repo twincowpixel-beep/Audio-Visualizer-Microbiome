@@ -343,8 +343,8 @@
       ":root{--ink:#111;--muted:#5a5a5a;--rule:#111}" +
       "body{margin:0 auto;max-width:860px;padding:24px 16px 64px;background:#fff;color:var(--ink);" +
       "font:15px/1.5 system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif}" +
-      "h1,h2{font-family:Saturno,\"Courier New\",monospace;letter-spacing:.06em;font-weight:normal}" +
-      "h1{font-size:30px;margin:0 0 4px}h2{font-size:20px;margin:0}" +
+      "h1,h2{font-family:Saturno,\"Courier New\",monospace;letter-spacing:0;font-weight:normal;font-synthesis:none}" +
+      "h1{font-size:32px;line-height:32px;margin:0 0 4px}h2{font-size:16px;line-height:16px;margin:0}" +
       ".sec-head{display:flex;gap:14px;align-items:center;margin:36px 0 6px;padding-bottom:6px;border-bottom:3px solid var(--rule);break-after:avoid}" +
       ".sec-head .meta{margin:2px 0 0}nav h2{margin:28px 0 6px;padding-bottom:4px;border-bottom:3px solid var(--rule)}" +
       ".cover{width:84px;height:84px;object-fit:cover;border:2px solid var(--rule);box-shadow:3px 3px 0 var(--rule);flex:none}" +
@@ -370,7 +370,7 @@
   // files means re-running that tool.
   const VIEWER_ASSETS = {
     css: ["css/shared.css", "css/viewer.css"],
-    js: ["js/pixel-frame.js", "js/house.js", "js/history.js", "js/charts.js", "js/viewer-runtime.js"],
+    js: ["js/pixel-frame.js", "js/house.js", "js/backdrop.js", "js/history.js", "js/charts.js", "js/viewer-runtime.js"],
   };
   /** The one inline <script> of the viewer, from the files' texts. */
   function viewerScript(jsTexts) {
@@ -379,8 +379,16 @@
 
   function viewerHtml(data, { fontDataUrl = "", assets, theme = "dots" } = {}) {
     // Pictures become CSS classes so each album's art is stored once.
+    // Ones that couldn't be saved are linked instead (they show online).
     const art = {}, covers = {};
-    let picCss = "";
+    let picCss = "", remote = 0;
+    const SAFE = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(scdn\.co|spotifycdn\.com)\/[A-Za-z0-9\/_.~%-]+$/i;
+    const link = url => {
+      if (!url || !SAFE.test(url)) return "";
+      const cls = "r" + remote++;
+      picCss += "." + cls + "{background-image:url(\"" + url + "\")}\n";
+      return cls;
+    };
     (data.thumbs || []).forEach((t, i) => {
       art[t.url] = "a" + i;
       picCss += ".a" + i + "{background-image:url(" + imageDataUrl(t.type, t.bytes) + ")}\n";
@@ -389,6 +397,16 @@
       covers[c.playlistId] = "c" + i;
       picCss += ".c" + i + "{background-image:url(" + imageDataUrl(c.type, c.bytes) + ")}\n";
     });
+    ((data.playlists && data.playlists.items) || []).forEach(p => {
+      if (!covers[p.id] && p.imageUrl) { const c = link(p.imageUrl); if (c) covers[p.id] = c; }
+    });
+    const wantArt = url => { if (url && !art[url]) { const c = link(url); if (c) art[url] = c; } };
+    [...((data.likedSongs && data.likedSongs.tracks) || []),
+     ...((data.playlists && data.playlists.items) || []).flatMap(p => p.tracks || [])].forEach(t => wantArt(t.albumImage));
+    ((data.albums && data.albums.items) || []).forEach(a => wantArt(a.imageUrl));
+    if (data.listening && data.listening.ranges) {
+      Object.values(data.listening.ranges).forEach(r => [...(r.artists || []), ...(r.tracks || [])].forEach(x => wantArt(x.image)));
+    }
     const view = Object.assign({}, data, { pictures: { art, covers }, theme });
     delete view.covers;
     delete view.thumbs;
@@ -405,7 +423,8 @@
       "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
       // Works offline and talks to nothing: links open Spotify, nothing else leaves the page.
       "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; " +
-      "style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'\">\n" +
+      "style-src 'unsafe-inline'; img-src data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src data:; " +
+      "base-uri 'none'; form-action 'none'\">\n" +
       "<title>My Music — Spotify backup " + escapeHtml(isoDay(data.createdAt)) + "</title>\n" +
       "<style>\n" + fontFace + assets.css.join("\n") + "\n" + picCss + "</style>\n</head>\n<body>\n" +
       "<noscript><p style=\"margin:24px\">This page needs JavaScript to show your music. Everything is also in the " +

@@ -21,6 +21,24 @@
 (function () {
   const PAGE = 50;   // the largest page size every list endpoint accepts
 
+  // Spotify's picture servers don't send the header that lets a web page
+  // download their images (CORS), so a direct fetch usually fails. On
+  // Netlify, _redirects turns these same-site paths into server-side
+  // fetches of the real image, which the page is allowed to read.
+  // Keep this list and _redirects in step (a test checks).
+  const IMAGE_PROXY = {
+    "i.scdn.co": "/img/i/",
+    "mosaic.scdn.co": "/img/mosaic/",
+    "image-cdn-ak.spotifycdn.com": "/img/cdn-ak/",
+    "image-cdn-fa.spotifycdn.com": "/img/cdn-fa/",
+    "seed-mix-image.spotifycdn.com": "/img/seed-mix/",
+    "blend-playlist-covers.spotifycdn.com": "/img/blend/",
+    "pickasso.spotifycdn.com": "/img/pickasso/",
+    "daily-mix.scdn.co": "/img/daily-mix/",
+    "lineup-images.scdn.co": "/img/lineup/",
+    "thisis-images.spotifycdn.com": "/img/thisis/",
+  };
+
   // Playlist songs are only readable for playlists you own or collaborate
   // on (Spotify, Feb 2026). Followed playlists are still tried, but after
   // this many refusals in a row we stop asking and just list them.
@@ -121,6 +139,33 @@
     const status = ui.onStatus || (() => {});
     const log = ui.onLog || (() => {});
     const fetchImpl = ui.fetchImpl || ((...a) => fetch(...a));
+
+    // One picture as { type, bytes }: through the site's own image relay
+    // first, then straight from Spotify. The relay is given up on after a
+    // few misses with no successes (not on Netlify, e.g. testing locally).
+    let relayHits = 0, relayMisses = 0;
+    async function fetchImage(url) {
+      const signal = ui.signal || undefined;
+      const read = async res => {
+        const type = res.headers.get("Content-Type") || "";
+        if (!res.ok || !/^image\//i.test(type)) throw new Error("HTTP " + res.status + " " + type);
+        return { type, bytes: new Uint8Array(await res.arrayBuffer()) };
+      };
+      let u = null;
+      try { u = new URL(url); } catch (e) { throw new Error("bad picture link"); }
+      const relay = IMAGE_PROXY[u.hostname];
+      if (relay && ui.relay !== false && (relayHits > 0 || relayMisses < 3)) {
+        try {
+          const got = await read(await fetchImpl(relay + u.pathname.replace(/^\//, "") + u.search, { signal }));
+          relayHits++;
+          return got;
+        } catch (e) {
+          if (signal && signal.aborted) throw e;
+          relayMisses++;
+        }
+      }
+      return read(await fetchImpl(url, { signal }));
+    }
 
     Object.assign(data, {
       format: "spotify-backup", formatVersion: 1,
@@ -343,18 +388,16 @@
         status({ part, parts, label: "Cover pictures", done: i, total: withArt.length });
         const p = withArt[i];
         try {
-          const res = await fetchImpl(p.imageUrl, { signal: ui.signal || undefined });
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          const type = res.headers.get("Content-Type") || "image/jpeg";
-          data.covers.push({ playlistId: p.id, type, bytes: new Uint8Array(await res.arrayBuffer()) });
+          const { type, bytes } = await fetchImage(p.imageUrl);
+          data.covers.push({ playlistId: p.id, type, bytes });
         } catch (e) {
           if (ui.signal && ui.signal.aborted) break;
           failed++;
         }
       }
       if (failed) {
-        data.warnings.push(failed + " cover picture" + (failed === 1 ? "" : "s") +
-          " couldn't be downloaded; their web links are in the backup instead.");
+        data.warnings.push(failed + " playlist cover" + (failed === 1 ? "" : "s") +
+          " couldn't be saved into the backup, so the music page links to them instead: they show while you're online.");
       }
       if (withArt.length) log("Cover pictures: " + (withArt.length - failed) + " saved.");
     }
@@ -378,10 +421,8 @@
         while (next < list.length && !(ui.signal && ui.signal.aborted)) {
           const url = list[next++];
           try {
-            const res = await fetchImpl(url, { signal: ui.signal || undefined });
-            if (!res.ok) throw new Error("HTTP " + res.status);
-            data.thumbs.push({ url, type: res.headers.get("Content-Type") || "image/jpeg",
-                               bytes: new Uint8Array(await res.arrayBuffer()) });
+            const { type, bytes } = await fetchImage(url);
+            data.thumbs.push({ url, type, bytes });
           } catch (e) {
             if (!(ui.signal && ui.signal.aborted)) failed++;
           }
@@ -396,7 +437,7 @@
         await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker));
         if (failed) {
           data.warnings.push(failed + " album picture" + (failed === 1 ? "" : "s") +
-            " couldn't be downloaded, so some songs show a blank square on the music page.");
+            " couldn't be saved into the backup, so the music page links to them instead: they show while you're online.");
         }
         log("Album pictures: " + (list.length - failed) + " saved.");
       }
@@ -413,5 +454,5 @@
     return data;
   }
 
-  window.Backup = { run, normTrack, normEntry, normAlbum, normArtist };
+  window.Backup = { IMAGE_PROXY, run, normTrack, normEntry, normAlbum, normArtist };
 })();

@@ -8,7 +8,7 @@ body { --s: 3; }
 .v-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .v-sub { font-size: 13px; color: #444; }
 .v-bar-btns { display: flex; flex-wrap: wrap; gap: 12px; }
-.v-bar-btns .eb-btn { font-size: 13px; padding: 6px 12px; min-height: 36px; }
+.v-bar-btns .eb-btn { font-size: 16px; padding: 8px 12px; min-height: 36px; flex: none; }
 .v-tabs { flex-wrap: wrap; }
 .v-tools { position: relative; z-index: 1; display: flex; gap: 10px; align-items: center; padding: 12px 22px 0; flex-wrap: wrap; }
 .field {
@@ -26,14 +26,15 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 .v-head .small { margin: 0; }
 .count { font-size: 13px; color: #444; margin: 4px 0; min-height: 1em; }
 .empty { color: #444; font-style: italic; }
-.back { display: inline-block; margin: 6px 0 4px; font-weight: 600; }
+.back { display: inline-flex; align-items: center; margin: 6px 0 14px; text-decoration: none; min-height: 40px; box-sizing: border-box; }
+.v-set .backdrop-controls { margin-top: 0; }
 
 /* Settings panel */
 .v-settings p { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
 .v-set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px 22px; }
 .v-set { display: flex; flex-direction: column; gap: 6px; }
 .v-set .pills { margin: 0; }
-.v-set-label { font: 12px var(--font-pixel); letter-spacing: 0.08em; -webkit-font-smoothing: none; text-shadow: 1px 0 0 currentColor; }
+.v-set-label { font: 16px/16px var(--font-pixel); letter-spacing: 0; -webkit-font-smoothing: none; }
 .v-size { display: flex; align-items: center; gap: 10px; }
 .v-size input { flex: 1; accent-color: #b07a2e; }
 .v-size-out { font-size: 14px; min-width: 3.5em; }
@@ -81,7 +82,7 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 }
 .layout-grid .song:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--os-black); background: var(--os-white); }
 .layout-grid .art { width: 100%; height: auto; aspect-ratio: 1; }
-.layout-grid .num { position: absolute; top: 12px; left: 12px; width: auto; z-index: 1; background: var(--os-black); color: var(--os-white); padding: 0 5px; font: 11px var(--font-pixel); -webkit-font-smoothing: none; }
+.layout-grid .num { position: absolute; top: 12px; left: 12px; width: auto; z-index: 1; background: var(--os-black); color: var(--os-white); padding: 0 5px; font: 700 11px var(--font-text); }
 .layout-grid .ext { position: absolute; top: 10px; right: 10px; background: var(--os-white); border: 2px solid var(--os-black); padding: 0 6px; }
 
 /* ---- playlist cards ---- */
@@ -95,7 +96,7 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 .pl-card:focus-visible { outline: 3px dashed var(--os-black); outline-offset: 3px; }
 .pl-cover { width: 100%; aspect-ratio: 1; }
 .pl-cover.big { width: calc(90px + var(--s) * 20px); flex: none; box-shadow: 4px 4px 0 var(--os-black); }
-.cover-blank { display: flex; align-items: center; justify-content: center; font: normal calc(24px + var(--s) * 6px) var(--font-pixel); color: #333; -webkit-font-smoothing: none; }
+.cover-blank { display: flex; align-items: center; justify-content: center; font: normal 48px/48px var(--font-pixel); color: #333; -webkit-font-smoothing: none; }
 .pl-name { font-weight: 700; font-size: calc(12px + var(--s) * 1.3px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 4px; }
 .pl-meta { font-size: 12px; color: #333; }
 .pl-head { display: flex; gap: 18px; align-items: flex-end; margin: 6px 0 12px; flex-wrap: wrap; }
@@ -112,14 +113,17 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 .artist-tile:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--os-black); }
 .mono {
     flex: none; width: calc(22px + var(--s) * 6px); height: calc(22px + var(--s) * 6px); display: flex; align-items: center; justify-content: center;
-    font: normal calc(13px + var(--s) * 2px) var(--font-pixel); -webkit-font-smoothing: none; color: #111;
+    font: normal 16px/16px var(--font-pixel); -webkit-font-smoothing: none; color: #111;
     background: hsl(var(--h, 140) 45% 72%); border: 2px solid var(--os-black); border-radius: 4px;
 }
 
 /* Settings → Text → Pixel */
 body.font-pixel .songs, body.font-pixel .pl-name, body.font-pixel .artist-tile span {
-    font-family: var(--font-pixel); -webkit-font-smoothing: none; letter-spacing: 0.04em;
+    font-family: var(--font-pixel); -webkit-font-smoothing: none; letter-spacing: 0; font-weight: normal; font-synthesis: none;
 }
+/* Pixel text stays on its 16px grid whatever the item size. */
+body.font-pixel .songs, body.font-pixel .pl-name { font-size: 16px; line-height: 20px; }
+body.font-pixel .song .t { font-weight: normal; }
 
 @media (prefers-reduced-motion: reduce) {
     .pl-card, .artist-tile { animation: none !important; }
@@ -133,7 +137,7 @@ body.font-pixel .songs, body.font-pixel .pl-name, body.font-pixel .artist-tile s
     .layout-compact .song .by { font-size: 0.85em; color: #333; }
     .layout-compact .song .by::before { content: none; }
     .v-tabs { gap: 6px; }
-    .v-tabs .tab { font-size: 12px; padding: 5px 9px; min-height: 36px; }
+    .v-tabs .tab { padding: 9px 10px 11px; min-height: 36px; }   /* Saturno stays 16px: smaller blurs */
 }
 @media print {
     body { background: #fff !important; }

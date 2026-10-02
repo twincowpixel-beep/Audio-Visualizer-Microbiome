@@ -39,6 +39,14 @@ Every backup includes `My Music.html`, a self-contained page that works offline:
 
 How it's built: `Exporters.viewerHtml()` pastes `css/shared.css`, `css/viewer.css` and the scripts in `Exporters.VIEWER_ASSETS.js` into one file, with the backup as JSON and the pictures as CSS classes. "View my music" on the site opens that same page, so the site's Content-Security-Policy allows the viewer script by its SHA-256 hash. **After changing any of those scripts, run `node spotify-backup/tools/csp-hash.js`** (a test fails until you do). Also leave Netlify's asset optimisation/minification off, since it would change the files.
 
+## Pictures (album art and playlist covers)
+
+Spotify's picture servers don't send the CORS header a web page needs to *download* an image, so fetching them straight from the browser fails. `_redirects` makes Netlify relay them from the same site (`/img/i/…` → `https://i.scdn.co/…`), which the page is allowed to read, so backups keep the pictures. Off Netlify (for example a local test server) the relay isn't there; the backup then tries Spotify directly, and any picture it still can't save is *linked* from My Music.html instead, so it shows while you're online. Keep `IMAGE_PROXY` in `js/backup.js` and `_redirects` in step (a test checks).
+
+## Moving backgrounds
+
+`js/backdrop.js` paints the background: colour splotches in the theme's palette, halftone-dithered like AudioBiome's ground paint, drifting on a warped field. It renders at 1/6 resolution into one fixed canvas at about 15 fps and pauses when the tab is hidden. The Background panel (and Settings in My Music.html) has a **Moving** on/off switch and a pixel **speed dial** (drag it, scroll it, or use the arrow keys). It's off by default for people whose system asks for reduced motion.
+
 ## Putting it on Netlify (drag and drop)
 
 1. Zip the *contents* of this folder (`index.html` must be at the top of the zip), leaving out `tests/`. Or just drag the folder itself.
@@ -84,7 +92,9 @@ These are also the most likely reasons the Spotify login never worked in AudioBi
 | `js/backup.js` | Walks the account and builds the data object |
 | `js/exporters.js` | Text, CSV, printable HTML, JSON, READ ME |
 | `js/zip.js` | Small dependency-free ZIP writer |
-| `js/house.js` | Shared house-style chrome: pixel buttons and panels, backgrounds, tooltip |
+| `js/house.js` | Shared house-style chrome: glossy pixel buttons and toggles, panels, the speed dial, backgrounds, tooltip |
+| `js/backdrop.js` | The moving colour-splotch background |
+| `_redirects` | Netlify relay for Spotify's pictures |
 | `js/stats-live.js` / `js/history.js` | Stats from the Web API / from Spotify's data download |
 | `js/stats-ui.js` | The My stats tab |
 | `js/charts.js` | Chart pieces shared by the site and the viewer |

@@ -146,6 +146,8 @@
   });
   tilesBg.forEach(x => { x.pb.setSelected(x.t === startTheme); x.b.setAttribute("aria-pressed", String(x.t === startTheme)); });
   House.setTheme(startTheme.id);
+  Backdrop.start();
+  bgPanel.append(Backdrop.controls());
 
   const togglePanel = (panel, btn) => {
     const open = panel.hidden;
@@ -156,7 +158,9 @@
   btnBg.addEventListener("click", () => togglePanel(bgPanel, btnBg));
   btnSettings.addEventListener("click", () => togglePanel(setPanel, btnSettings));
   btnPrint.addEventListener("click", () => print());
-  notesBtn.addEventListener("click", () => { notes.hidden = !notes.hidden; });
+  notesBtn.addEventListener("click", () => { notes.hidden = !notes.hidden; notesBtn.setAttribute("aria-pressed", String(!notes.hidden)); });
+  notesBtn.setAttribute("aria-pressed", "false");
+  House.toggle(notesBtn, 0.11);
 
   // ---------- settings panel ------------------------------------------------
   function buildSettings() {
@@ -208,11 +212,14 @@
       });
     group("Show", show);
 
-    const reset = el("button", "pill", "Reset to default");
+    group("Background", Backdrop.controls());
+
+    const reset = el("button", "eb-btn slim", "Reset to default");
     reset.type = "button";
     reset.addEventListener("click", () => { Object.assign(settings, JSON.parse(JSON.stringify(DEFAULTS))); buildSettings(); saveSettings(); });
     group("", reset);
     setPanel.append(grid);
+    House.button(reset, 0.02);
   }
 
   // ---------- song lists ----------------------------------------------------
@@ -277,6 +284,7 @@
     b.addEventListener("click", () => { location.hash = id; });
     tabBtns[id] = b;
     tabBar.append(b);
+    House.toggle(b, hueAt(TABS.findIndex(t => t[0] === id)));
   });
 
   function route() {
@@ -325,7 +333,7 @@
   }
 
   function viewPlaylist(pl, q) {
-    const back = el("a", "back", "← All playlists");
+    const back = el("a", "eb-btn slim back", "← All playlists");
     back.href = "#playlists";
     const head = el("div", "pl-head");
     head.append(playlistCover(pl, "pl-cover big"));
@@ -339,6 +347,7 @@
     if (pl.url) { const a = el("a", "small", pl.url); a.href = pl.url; a.target = "_blank"; a.rel = "noopener"; info.append(a); }
     head.append(info);
     body.append(back, head);
+    House.button(back, 0.72);
     if (pl.tracks) body.append(songList(pl.tracks, q));
     else body.append(el("p", "empty", pl.note || "Spotify didn't share this playlist's songs."));
   }
