@@ -10,7 +10,7 @@
    space is domain-warped (two sine octaves per axis) so edges wobble and
    breathe instead of sliding.
 
-   Cheap on purpose: drawn at 1/PX resolution into one fixed canvas and
+   Cheap on purpose: drawn at 1/2–1/5 resolution (the Pixels setting) into one fixed canvas and
    scaled up crisp, capped near 15 fps, paused while the tab is hidden or
    when switched off (then it holds one still frame). Off by default for
    people who've asked their system for reduced motion.
@@ -21,7 +21,8 @@
      Backdrop.controls()         an element with the on/off toggle + speed dial
    ============================================================ */
 (function () {
-  const PX = 6;                 // CSS pixels per backdrop pixel
+  // CSS pixels per backdrop pixel, by the "Pixels" setting.
+  const PIXEL_SIZES = { fine: 2, medium: 3, chunky: 5 };
   const FPS = 15;
   const KEY = "spotify-backup.backdrop";
   const N = 7;                  // splotches alive at once
@@ -42,7 +43,6 @@
   const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
   // Pack to the canvas's native RGBA-in-a-uint32 (little-endian: ABGR).
   const pack = c => (255 << 24) | (c[2] << 16) | (c[1] << 8) | c[0];
-  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
 
   let canvas = null, ctx = null, img = null, buf32 = null, W = 0, H = 0;
   let cover = null, owner = null;       // per-pixel best coverage and its splotch
@@ -52,7 +52,7 @@
 
   function load() {
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let o = { on: !still, speed: 1 };
+    let o = { on: !still, speed: 1, pixels: "medium" };
     try { o = Object.assign(o, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { /* storage blocked */ }
     return o;
   }
@@ -84,6 +84,7 @@
   }
 
   function resize() {
+    const PX = PIXEL_SIZES[opts.pixels] || 3;
     W = Math.max(8, Math.ceil(innerWidth / PX));
     H = Math.max(8, Math.ceil(innerHeight / PX));
     canvas.width = W; canvas.height = H;
@@ -126,10 +127,11 @@
     }
 
     const base = pal.base, dot = pal.dot;
+    const { table, n } = House.ditherTable();          // Bayer or halftone, as chosen
     for (let y = 0; y < H; y++) {
-      const by = (y & 3) * 4, row = y * W;
+      const by = (y % n) * n, row = y * W;
       for (let x = 0; x < W; x++) {
-        const p = row + x, v = cover[p], th = BAYER[by + (x & 3)];
+        const p = row + x, v = cover[p], th = table[by + (x % n)];
         if (v <= 0 || v * 2.2 < th) {
           // Page colour with the house's faint 1-bit dot grid.
           buf32[p] = ((x % 3) | (y % 3)) === 0 ? dot : base;
@@ -183,11 +185,14 @@
     addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(resize, 150); });
     document.addEventListener("visibilitychange", kick);
     document.addEventListener("house:theme", e => { setPalette(e.detail.id); render(); });
+    document.addEventListener("house:dither", () => render());
     kick();
   }
 
   function set(next) {
+    const resized = next.pixels && next.pixels !== opts.pixels;
     Object.assign(opts, next);
+    if (resized && canvas) resize();
     try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch (e) { /* storage blocked */ }
     listeners.forEach(fn => fn(opts));
     if (opts.on) kick(); else render();
@@ -203,6 +208,31 @@
     toggleBtn.className = "pill";
     const knobEl = document.createElement("div");
     box.append(toggleBtn, knobEl);
+
+    // Dither style and pixel size: rows of pixel pills.
+    const pillRow = (label, options, current, pick) => {
+      const row = document.createElement("div");
+      row.className = "backdrop-row";
+      const title = document.createElement("span");
+      title.className = "backdrop-row-label";
+      title.textContent = label;
+      row.append(title);
+      const buttons = options.map(([value, text]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "pill";
+        b.textContent = text;
+        b.setAttribute("aria-pressed", String(value === current()));
+        b.addEventListener("click", () => { pick(value); buttons.forEach(([v, x]) => x.setAttribute("aria-pressed", String(v === current()))); });
+        row.append(b);
+        return [value, b];
+      });
+      box.append(row);
+      buttons.forEach(([, b], i) => House.toggle(b, [0.58, 0.88, 0.47][i] ?? 0.5));
+      return buttons;
+    };
+    const ditherBtns = pillRow("Dither", [["bayer", "Bayer"], ["halftone", "Halftone"]], () => House.dither(), m => House.setDither(m));
+    const pixelBtns = pillRow("Pixels", [["fine", "Fine"], ["medium", "Medium"], ["chunky", "Chunky"]], () => opts.pixels, v => set({ pixels: v }));
     House.toggle(toggleBtn, 0.38);
     const label = toggleBtn.querySelector(".pf-label");
     const dial = House.knob(knobEl, {
@@ -215,12 +245,17 @@
       toggleBtn.setAttribute("aria-pressed", String(o.on));
       dial.set(o.speed);
       knobEl.classList.toggle("off", !o.on);
+      pixelBtns.forEach(([v, b]) => b.setAttribute("aria-pressed", String(v === o.pixels)));
+      ditherBtns.forEach(([v, b]) => b.setAttribute("aria-pressed", String(v === House.dither())));
     };
     toggleBtn.addEventListener("click", () => set({ on: !opts.on }));
     listeners.add(sync);
     sync(opts);
     return box;
   }
+
+  // Another copy of the controls (e.g. Settings) changed the dither: keep all in step.
+  document.addEventListener("house:dither", () => listeners.forEach(fn => fn(opts)));
 
   window.Backdrop = { start, set, options: () => Object.assign({}, opts), controls, PALETTES };
 })();

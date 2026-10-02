@@ -21,6 +21,7 @@
     "app": 0.38,                      // Spotify-ish green window
     "login-btn": 0.38, "start-btn": 0.33, "download-btn": 0.58, "print-btn": 0.11,
     "stop-btn": 0.02, "logout-btn": 0.02, "logout2-btn": 0.02, "again-btn": 0.72, "continue-btn": 0.33,
+    "quota-retry": 0.11, "saved-continue": 0.33, "saved-discard": 0.02,
     "copy-btn": 0.64, "save-id-btn": 0.33,
     "request-btn": 0.88, "send-request-btn": 0.88, "request-back-btn": 0.72, "request-done-back-btn": 0.72,
     "request-copy-btn": 0.64,
@@ -44,8 +45,10 @@
     House.frame($("bg-picker"), HUE["bg-btn"], { r: 8, border: 4 });
     House.crt($("crt"));
     // No pixel text loose on a panel: titles, headings and labels get plates.
-    House.autoPlate(".win-title, .stats-h, .card h3, .knob-value", el =>
+    House.autoPlate(".win-title, .stats-h, .card h3, .knob-value, .backdrop-row-label, .bg-picker > p", el =>
       el.classList.contains("win-title") ? 0.38 : House.hueOf(el, 0.11));
+    // …and blocks of ordinary text sit on paper panels, never bare on a window.
+    House.autoPaper(".lead, #tab-backup .small, #tab-stats > .small, .checks, .counts, .warnings, .setup-list, .copy-box");
     progressBar = DitherBar.create($("bar"));
     House.initTooltip();
   }
@@ -139,6 +142,12 @@
                "and " + OWNER + " will get an email asking to add you — then come back and log in again. " +
                "(If you ARE the owner: check your Spotify Premium is active — Spotify switches developer apps off without it.)";
       }
+      if (e.quota) {
+        return "Spotify's usage allowance for this app is used up for now. It's shared by everything on your " +
+               "Spotify developer account (AudioBiome too) and resets after a long break \u2014 Spotify says 13\u201318 hours, " +
+               "so try again around " + resetTime(e.until) + ". Anything already saved is kept: come back then and press " +
+               "\u201cContinue\u201d. Asking again before then doesn't help, so this page won't.";
+      }
       if (e.status === 429) {
         const mins = Math.max(1, Math.ceil((e.retryAfter || 60) / 60));
         return "Spotify asked this app to take a break for about " + mins + " minute" + (mins === 1 ? "" : "s") +
@@ -161,17 +170,71 @@
     });
   }
 
+  function resetTime(untilMs) {
+    const d = new Date(untilMs || Date.now() + 13 * 3600e3);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return (sameDay ? "" : d.toLocaleDateString(undefined, { weekday: "long" }) + " ") +
+           d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  const quotaBlocked = () => SpotifyApi.quota.until() > Date.now();
+  function quotaNotice() {
+    notice(friendly({ name: "ApiError", status: 429, quota: true, until: SpotifyApi.quota.until() }), "info");
+    $("quota-box").hidden = false;
+  }
+
+  // ---- unfinished backups survive closing the page (IndexedDB) ----------
+  const Saved = (() => {
+    const open = () => new Promise((res, rej) => {
+      const r = indexedDB.open("spotify-backup", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("kv");
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    const tx = async (mode, fn) => {
+      const db = await open();
+      return new Promise((res, rej) => {
+        const t = db.transaction("kv", mode);
+        const req = fn(t.objectStore("kv"));
+        t.oncomplete = () => res(req && req.result);
+        t.onerror = () => rej(t.error);
+      });
+    };
+    return {
+      get: () => tx("readonly", s => s.get("unfinished")).catch(() => null),
+      put: v => tx("readwrite", s => s.put(v, "unfinished")).catch(() => {}),
+      clear: () => tx("readwrite", s => s.delete("unfinished")).catch(() => {}),
+    };
+  })();
+
+  async function offerSaved() {
+    const saved = await Saved.get();
+    if (!saved || !saved.data) { $("saved-box").hidden = true; return; }
+    unfinished = { opts: saved.opts, data: saved.data };
+    const n = ((saved.data.likedSongs && saved.data.likedSongs.tracks.length) || 0) +
+      ((saved.data.playlists && saved.data.playlists.items.reduce((s, p) => s + ((p.tracks && p.tracks.length) || 0), 0)) || 0);
+    const who = saved.data.account && saved.data.account.name ? " (" + saved.data.account.name + ")" : "";
+    $("saved-text").textContent = "You have an unfinished backup" + who + " from " +
+      new Date(saved.savedAt).toLocaleString(undefined, { weekday: "long", hour: "numeric", minute: "2-digit" }) +
+      " (" + n.toLocaleString() + " songs so far). Continue it to fetch only what's missing.";
+    $("saved-box").hidden = false;
+  }
+
   /** Show the Choose step straight away; the greeting's name is fetched
       in the background and never waited for. (Waiting for it is what left
       the page blank whenever Spotify was rate-limiting the app.) */
   async function toChoose() {
-    $("who").textContent = "there";
+    $("who").textContent = sessionStorage.getItem("spotify-backup.name") || "there";
     show("choose");
+    offerSaved();
+    if (quotaBlocked()) { quotaNotice(); return; }            // don't spend allowance just to say hi
+    if (sessionStorage.getItem("spotify-backup.name")) return; // already know the name this visit
     try {
       // maxWaitSec 0: if Spotify says "slow down", say so instead of waiting.
       const me = await client({ maxWaitSec: 0 }).get("/me");
       $("who").textContent = me.display_name || me.id || "there";
+      try { sessionStorage.setItem("spotify-backup.name", $("who").textContent); } catch (err) { /* fine */ }
     } catch (e) {
+      if (e.quota) { quotaNotice(); return; }
       if (e instanceof AuthError || (e.name === "ApiError" && e.status === 401)) {
         SpotifyAuth.logout();
         show("login");
@@ -423,9 +486,10 @@
   function preventLeave(e) { e.preventDefault(); e.returnValue = ""; }
 
   // The last run that stopped early, so "Continue backup" can pick it up.
-  let unfinished = null;     // { opts, data }
+  let unfinished = null;     // { opts, data } — also kept in IndexedDB (Saved)
 
   async function start(resume = null) {
+    if (quotaBlocked()) { show("choose"); quotaNotice(); return; }
     const opts = resume ? resume.opts : options();
     if (!opts.liked && !opts.myPlaylists && !opts.followedPlaylists && !opts.albums && !opts.artists) {
       notice("Tick at least one thing to save.", "info");
@@ -473,6 +537,8 @@
       return;
     }
     unfinished = data.complete ? null : { opts, data };
+    // Keep an unfinished run across closing the page (e.g. to finish tomorrow).
+    if (unfinished) Saved.put({ opts, data, savedAt: Date.now() }); else Saved.clear();
     await finish(data, failure);
   }
 
@@ -571,6 +637,7 @@
 
   function logout(message) {
     SpotifyAuth.logout();
+    try { sessionStorage.removeItem("spotify-backup.name"); } catch (e) { /* fine */ }
     StatsUI.forget();
     result = null;
     show("login");
@@ -612,6 +679,15 @@
     $("print-btn").addEventListener("click", openPrintable);
     $("again-btn").addEventListener("click", () => { clearNotice(); show("choose"); });
     $("continue-btn").addEventListener("click", () => { if (unfinished) start(unfinished); });
+    $("saved-continue").addEventListener("click", () => { if (unfinished) start(unfinished); });
+    $("saved-discard").addEventListener("click", () => { unfinished = null; Saved.clear(); $("saved-box").hidden = true; });
+    $("quota-retry").addEventListener("click", () => {
+      SpotifyApi.quota.clear();
+      $("quota-box").hidden = true;
+      clearNotice();
+      try { sessionStorage.removeItem("spotify-backup.name"); } catch (e) { /* fine */ }
+      toChoose();
+    });
     $("logout-btn").addEventListener("click", () => logout());
     $("logout2-btn").addEventListener("click", () => logout());
 

@@ -64,7 +64,35 @@
   // 4x4 Bayer matrix: the ordered-dither pattern used for every gradient
   // here, so blends read as 1-bit pixel art rather than smooth CSS.
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + 0.5) / 16);
-  const bayer = (x, y) => BAYER[(y & 3) * 4 + (x & 3)];
+  // Halftone: a 6×6 clustered-dot screen. Cells are ranked by distance from
+  // the centre, so as a value rises a round dot grows outward from the
+  // middle of each cell — the printed-comic look — instead of Bayer's
+  // even scatter.
+  const HALFTONE = (() => {
+    const N = 6, c = (N - 1) / 2, cells = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) cells.push([Math.hypot(x - c, y - c) + (x + y * N) * 1e-4, x, y]);
+    cells.sort((a, b) => a[0] - b[0]);
+    const m = new Float32Array(N * N);
+    cells.forEach(([, x, y], i) => { m[y * N + x] = (i + 0.5) / (N * N); });
+    return m;
+  })();
+  const DITHER_KEY = "spotify-backup.dither";
+  let ditherMode = "bayer";
+  try { ditherMode = localStorage.getItem(DITHER_KEY) === "halftone" ? "halftone" : "bayer"; } catch (e) { /* storage blocked */ }
+  /** The threshold table in use: { table, n } (an n×n matrix of 0..1). */
+  const ditherTable = () => ditherMode === "halftone" ? { table: HALFTONE, n: 6 } : { table: BAYER, n: 4 };
+  /** Threshold (0..1) at pixel x,y for the chosen dither — every dithered
+      thing in the house style (backdrop, progress bar, swatches, dial) asks here. */
+  function bayer(x, y) {
+    const { table, n } = ditherTable();
+    return table[(((y % n) + n) % n) * n + (((x % n) + n) % n)];
+  }
+  function setDither(mode) {
+    ditherMode = mode === "halftone" ? "halftone" : "bayer";
+    try { localStorage.setItem(DITHER_KEY, ditherMode); } catch (e) { /* storage blocked */ }
+    registry.forEach(r => r.pb.draw && r.pb.draw());
+    document.dispatchEvent(new CustomEvent("house:dither", { detail: ditherMode }));
+  }
   const rgb = hex => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 
   /** A pattern that fills `w`×`h` with a diagonal dithered blend a → b,
@@ -191,6 +219,25 @@
     new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && run(n))))
       .observe(document.body, { childList: true, subtree: true });
   }
+  /** A paper panel: a soft bevelled frame behind a block of ordinary text
+      (paragraphs, lists), so text never sits bare on a window. */
+  function paper(el, hue = 0.13) {
+    if (el.dataset.plated || !el.textContent.trim()) return null;
+    el.dataset.plated = "1";
+    el.classList.add("paper");
+    return frame(el, hue, { r: 6, border: 3 });
+  }
+  /** Paper every element matching a selector, now and when added later. */
+  function autoPaper(selector, hue = 0.13) {
+    const run = root => {
+      if (root.matches && root.matches(selector)) paper(root, hue);
+      if (root.querySelectorAll) root.querySelectorAll(selector).forEach(e => paper(e, hue));
+    };
+    run(document.body);
+    new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && run(n))))
+      .observe(document.body, { childList: true, subtree: true });
+  }
+
   /** The hue of the nearest framed panel around `el` (so a card's title
       plate matches its card). */
   function hueOf(el, fallback = 0.11) {
@@ -385,7 +432,7 @@
       // Gloss pixels, top-left of the face.
       [[6, 5], [8, 4], [10, 4], [5, 7]].forEach(([x, y]) => { const i = (y * G + x) * 4; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255; });
       ctx.putImageData(img, 0, 0);
-      out.textContent = o.format(value);
+      setLabel(out, o.format(value));     // keeps the readout's plate if it has one
       el.setAttribute("aria-valuenow", String(value));
       el.setAttribute("aria-valuetext", o.format(value));
     }
@@ -458,6 +505,6 @@
     document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
   }
 
-  window.House = { hslHex, mutedStyle, THEMES, button, toggle, plate, autoPlate, hueOf, setLabel, frame, crt, retint, setTheme, currentTheme, initTooltip,
-                   swatch, knob, bayer, rgb };
+  window.House = { hslHex, mutedStyle, THEMES, button, toggle, plate, autoPlate, paper, autoPaper, hueOf, setLabel, frame, crt, retint, setTheme, currentTheme, initTooltip,
+                   swatch, knob, bayer, rgb, ditherTable, setDither, dither: () => ditherMode };
 })();

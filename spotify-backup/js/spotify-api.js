@@ -30,6 +30,25 @@
     }
   }
 
+  // ---- the account's daily allowance ------------------------------------
+  // Since July 2026 Spotify gives each developer account (all its apps
+  // together) a usage allowance. When it's used up every request gets a
+  // 429 with {"reason":"QUOTA_EXCEEDED"} for roughly 13–18 hours, and
+  // asking again during that time doesn't help. So the first such answer
+  // is remembered (in this browser) and no request goes out until it
+  // should have reset; the page says so instead of retrying.
+  const QUOTA_KEY = "spotify-backup.quota-until";
+  const QUOTA_GUESS_SEC = 13 * 3600;     // when Spotify doesn't say how long
+  const quota = {
+    until() { try { return +localStorage.getItem(QUOTA_KEY) || 0; } catch (e) { return 0; } },
+    set(ms) { try { localStorage.setItem(QUOTA_KEY, String(ms)); } catch (e) { /* storage blocked */ } },
+    clear() { try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* storage blocked */ } },
+  };
+  function quotaError(url, untilMs, now) {
+    return new ApiError(429, "Spotify's usage allowance for this app is used up.", url,
+      { quota: true, retryAfter: Math.max(60, Math.round((untilMs - now) / 1000)), until: untilMs });
+  }
+
   function abortError() {
     const e = new Error("Stopped");
     e.name = "AbortError";
@@ -95,6 +114,8 @@
       let refreshed = false, serverRetries = 0, netRetries = 0, rateRetries = 0;
       for (;;) {
         checkStop();
+        // Allowance used up: don't ask again until it should have reset.
+        if (quota.until() > now()) throw quotaError(url, quota.until(), now());
         await pace();
         let res;
         try {
@@ -123,6 +144,15 @@
           // Retry-After is only readable if Spotify exposes it to browsers;
           // without it, back off 5, 10, 20, 40, 60 s…
           const told = parseInt(res.headers.get("Retry-After") || "", 10);
+          // The daily allowance, not the 30-second speed limit: stop now.
+          let body = null;
+          try { body = await res.clone().json(); } catch (e) { /* not JSON */ }
+          const reason = body && (body.reason || (body.error && body.error.reason));
+          if (reason === "QUOTA_EXCEEDED" || told > 15 * 60) {
+            const untilMs = now() + (told > 0 ? told : QUOTA_GUESS_SEC) * 1000;
+            quota.set(untilMs);
+            throw quotaError(url, untilMs, now());
+          }
           const wait = told > 0 ? told : Math.min(60, 5 * 2 ** rateRetries);
           rateRetries++;
           if (wait > maxWaitSec || waitedSec + wait > maxTotalWaitSec) {
@@ -162,5 +192,5 @@
     return { get, getAll };
   }
 
-  window.SpotifyApi = { API, ApiError, createClient, pause };
+  window.SpotifyApi = { API, ApiError, createClient, pause, quota };
 })();

@@ -126,7 +126,8 @@
   House.frame(setPanel, 0.64, { r: 8, border: 4 });
   House.initTooltip();
   // No pixel text loose on a panel: titles, headings and labels get plates.
-  House.autoPlate(".win-title, .stats-h, .card h3, .v-set-label, .knob-value", e =>
+  House.autoPaper(".v-sub, .v-head .small, .count, .empty, .v-body > .small, .v-checks, .pl-head .desc");
+  House.autoPlate(".win-title, .stats-h, .card h3, .v-set-label, .knob-value, .backdrop-row-label, .bg-picker > p", e =>
     e.classList.contains("win-title") ? 0.38 : House.hueOf(e, 0.11));
 
   // Backgrounds — same picker as the site; starts on the one chosen there.

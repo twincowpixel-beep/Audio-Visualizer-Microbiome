@@ -240,7 +240,7 @@ test("run() builds every section and normalises tracks", async () => {
   assert.deepEqual([...data.warnings], []);
 });
 
-test("run() lists followed playlists by name and stops probing after repeated refusals", async () => {
+test("run() lists followed playlists by name and stops probing after a refusal", async () => {
   const followed = Array.from({ length: 6 }, (_, i) => ({ id: "f" + i, name: "Followed " + i, owner: { id: "someone" } }));
   const api = fakeApi({
     "/me/playlists": [{ items: followed, total: 6 }],
@@ -251,7 +251,7 @@ test("run() lists followed playlists by name and stops probing after repeated re
   assert.equal(data.playlists.items.length, 6);
   assert.ok(data.playlists.items.every(p => p.tracks === null && /only shares/.test(p.note)));
   const probes = api.requested.filter(p => p.startsWith("/playlists/"));
-  assert.equal(probes.length, 3);
+  assert.equal(probes.length, 1, "one refusal is enough: each probe costs allowance");
   assert.equal(data.warnings.length, 1);
   assert.match(data.warnings[0], /6 playlists you follow/);
 });
@@ -352,4 +352,27 @@ test("run() continues a stopped backup instead of starting over", async () => {
   assert.equal(data.playlists.items[1].tracks.length, 51);
   assert.ok(!api.requested.some(p => p.startsWith("/playlists/done")), "finished playlists aren't asked for again");
   assert.equal(data.listening, prev.listening);
+});
+
+test("Spotify's used-up allowance stops all requests until it resets", async () => {
+  const store = new Map();
+  globalThis.localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k) };
+  try {
+    let calls = 0, clock = 1_000_000;
+    const api = createClient({
+      getToken: async () => "t", refreshToken: async () => {}, sleep: noSleep, now: () => clock,
+      fetchImpl: async () => { calls++; return json({ error: { status: 429, message: "Too many" }, reason: "QUOTA_EXCEEDED" }, 429); },
+    });
+    await assert.rejects(api.get("/me"), e => e.quota === true && e.retryAfter >= 13 * 3600 - 1);
+    assert.equal(calls, 1, "no retries against a used-up allowance");
+    await assert.rejects(api.get("/me/tracks"), e => e.quota === true);
+    assert.equal(calls, 1, "and nothing is sent until it should have reset");
+    clock += 14 * 3600 * 1000;
+    await assert.rejects(api.get("/me"), e => e.quota === true);
+    assert.equal(calls, 2, "after the reset time it asks again");
+    window.SpotifyApi.quota.clear();
+    assert.equal(window.SpotifyApi.quota.until(), 0);
+  } finally {
+    delete globalThis.localStorage;
+  }
 });

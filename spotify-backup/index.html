@@ -6,7 +6,7 @@
     <!-- The login code sits in the address bar for a moment; never leak it. -->
     <meta name="referrer" content="no-referrer">
     <!-- This page holds a Spotify login, so it may only talk to Spotify. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-QsugtbCv6GjffhyItaPBzwO0FckKQZUA8Ifsc00qMgg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vWY1gKl/TU/y6Avs13Bb9jrXJdNnTQE9TMI4Dbqm8U4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Spotify Backup</title>
     <link rel="stylesheet" href="css/shared.css">
     <style>
@@ -189,6 +189,16 @@
             </section>
 
             <section id="step-choose" hidden>
+                <div id="quota-box" class="row" hidden>
+                    <button id="quota-retry" class="eb-btn slim" type="button">Check again now</button>
+                </div>
+                <div id="saved-box" hidden>
+                    <p class="lead" id="saved-text">You have an unfinished backup.</p>
+                    <div class="row">
+                        <button id="saved-continue" class="eb-btn big" type="button">Continue it</button>
+                        <button id="saved-discard" class="eb-btn slim" type="button">Start fresh instead</button>
+                    </div>
+                </div>
                 <p class="lead">Hi, <b id="who">there</b>! What should we save?</p>
                 <div class="checks">
                     <label><input type="checkbox" id="opt-liked" checked> Liked songs</label>

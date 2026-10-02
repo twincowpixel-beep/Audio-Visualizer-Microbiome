@@ -42,7 +42,7 @@
   // Playlist songs are only readable for playlists you own or collaborate
   // on (Spotify, Feb 2026). Followed playlists are still tried, but after
   // this many refusals in a row we stop asking and just list them.
-  const FOLLOWED_PROBES = 3;
+  const FOLLOWED_PROBES = 1;   // each probe costs allowance (see spotify-api.js)
 
   function normTrack(t, extra = {}) {
     if (!t) {

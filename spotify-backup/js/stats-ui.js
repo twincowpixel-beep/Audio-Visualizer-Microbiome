@@ -34,6 +34,11 @@
     }
     $("stats-login").hidden = true;
     $("stats-live-body").hidden = false;
+    if (SpotifyApi.quota.until() > Date.now() && !liveCache[range]) {
+      liveMessage("Spotify's usage allowance for this app is used up for now, so top picks can't load until it " +
+        "resets (Spotify says 13\u201318 hours). Minutes listened below still works \u2014 it doesn't use Spotify at all.", false);
+      return;
+    }
     liveMessage("Asking Spotify…", false);
     try {
       // Never sit silently: short waits are counted down here, long ones
@@ -53,7 +58,7 @@
         liveMessage("Spotify needs your OK to share listening stats. Log in again and approve the new " +
                     "permissions (it only asks to see your top artists and recent plays).", true);
       } else {
-        liveMessage(e.name === "ApiError" && e.status === 429
+        liveMessage(e.quota ? deps.friendly(e) : e.name === "ApiError" && e.status === 429
           ? "Spotify is asking this app to slow down for about " + Math.max(1, Math.ceil((e.retryAfter || 60) / 60)) +
             " minutes. Your top picks will load if you come back to this tab after that."
           : deps.friendly(e), false);
