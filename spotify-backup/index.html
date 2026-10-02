@@ -6,7 +6,7 @@
     <!-- The login code sits in the address bar for a moment; never leak it. -->
     <meta name="referrer" content="no-referrer">
     <!-- This page holds a Spotify login, so it may only talk to Spotify. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-zvEac1EC4KUwR6VH2iBrEfXDpDNjnmUVIo05yBdNx0w='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-QsugtbCv6GjffhyItaPBzwO0FckKQZUA8Ifsc00qMgg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com; font-src 'self' data:; connect-src 'self' https://formsubmit.co https://accounts.spotify.com https://api.spotify.com https://*.scdn.co https://*.spotifycdn.com; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Spotify Backup</title>
     <link rel="stylesheet" href="css/shared.css">
     <style>
@@ -103,7 +103,6 @@
         <div class="win-bar">
             <h1 id="app-title" class="win-title">SPOTIFY BACKUP</h1>
             <button id="bg-btn" class="eb-btn slim bg-btn" type="button" aria-expanded="false" aria-controls="bg-picker">Background</button>
-            <span class="win-ver">v2</span>
         </div>
         <div id="bg-picker" class="bg-picker" hidden>
             <p>Pick a background</p>
@@ -310,7 +309,7 @@
             <div id="history-out" hidden></div>
         </div>
     </main>
-    <p class="footer"><span>Runs entirely in your browser &middot; read-only access &middot; no server, no tracking</span></p>
+    <p class="footer"><span>Spotify Backup v2 &middot; runs entirely in your browser &middot; read-only access &middot; no server, no tracking</span></p>
 
     <script src="js/config.js"></script>
     <script src="js/pixel-frame.js"></script>

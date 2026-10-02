@@ -43,6 +43,9 @@
     House.frame($("notice"), NOTICE_HUE.error, { r: 8, border: 4 });
     House.frame($("bg-picker"), HUE["bg-btn"], { r: 8, border: 4 });
     House.crt($("crt"));
+    // No pixel text loose on a panel: titles, headings and labels get plates.
+    House.autoPlate(".win-title, .stats-h, .card h3, .knob-value", el =>
+      el.classList.contains("win-title") ? 0.38 : House.hueOf(el, 0.11));
     progressBar = DitherBar.create($("bar"));
     House.initTooltip();
   }

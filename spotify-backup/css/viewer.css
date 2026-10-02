@@ -35,6 +35,7 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 .v-set { display: flex; flex-direction: column; gap: 6px; }
 .v-set .pills { margin: 0; }
 .v-set-label { font: 16px/16px var(--font-pixel); letter-spacing: 0; -webkit-font-smoothing: none; }
+.v-set .plate, .v-title .plate { align-self: flex-start; }
 .v-size { display: flex; align-items: center; gap: 10px; }
 .v-size input { flex: 1; accent-color: #b07a2e; }
 .v-size-out { font-size: 14px; min-width: 3.5em; }

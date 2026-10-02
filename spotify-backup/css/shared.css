@@ -35,7 +35,7 @@ body {
 }
 a { color: inherit; }
 /* Everything set in the pixel face: crisp, never smoothed. */
-.eb-btn, .win-title, .win-ver, .steps li, .crt-lines {
+.eb-btn, .win-title, .steps li, .crt-lines {
     font-family: var(--font-pixel);
     font-weight: normal; font-synthesis: none; letter-spacing: 0;
     -webkit-font-smoothing: none;
@@ -60,8 +60,8 @@ a { color: inherit; }
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     padding: 12px 18px 4px;
 }
-.win-title { margin: 0; font: 16px/16px var(--font-pixel); letter-spacing: 2px; }
-.win-ver { font: 16px/16px var(--font-pixel); color: var(--muted); }
+/* The window title is 32px (Saturno's 2x size) on a plate: easy to read. */
+.win-title { margin: 0; font: 32px/32px var(--font-pixel); letter-spacing: 2px; padding: 10px 16px 12px; }
 .win-body { position: relative; z-index: 1; padding: 8px 22px 24px; }
 
 section > :first-child { margin-top: 6px; }
@@ -113,6 +113,7 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 .knob-face { image-rendering: pixelated; image-rendering: crisp-edges; cursor: ns-resize; touch-action: none;
              filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.6)); }
 .knob-value { font: 16px/16px var(--font-pixel); -webkit-font-smoothing: none; white-space: nowrap; }
+.knob-value.plate { padding: 8px 10px 10px; }
 .knob.off { opacity: 0.55; }
 
 .win-bar .bg-btn { font-size: 16px; padding: 8px 12px; min-height: 36px; margin-left: auto; flex: none; }
@@ -149,6 +150,10 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 /* ===== Stats ==================================================== */
 .stats-h { font: 16px/16px var(--font-pixel); letter-spacing: 0; margin: 26px 0 10px; -webkit-font-smoothing: none; }
 .stats-h:first-child { margin-top: 8px; }
+/* Plates (House.plate): the bevel is the canvas; text sits above it. */
+.plate { display: inline-flex; align-items: center; position: relative; padding: 9px 12px 11px; max-width: 100%; box-sizing: border-box; }
+.plate > * { position: relative; z-index: 1; }
+.plate .pf-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
 .pill { padding: 10px 14px 12px; min-height: 38px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; margin-top: 6px; }
@@ -156,7 +161,7 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 /* Only the first rows of a list animate in; long lists just appear. */
 .rank-row:nth-child(n+11), .hbar:nth-child(n+11) { animation: none; }
 .card > * { position: relative; z-index: 1; }
-.card h3 { margin: 0 0 4px; font: 16px/16px var(--font-pixel); letter-spacing: 0; -webkit-font-smoothing: none; }
+.card h3 { margin: 0 0 8px; font: 16px/16px var(--font-pixel); letter-spacing: 0; -webkit-font-smoothing: none; }
 .card-sub { font-size: 13px; color: #444; margin: 2px 0 10px; }
 .screen { background: var(--os-white); border: 2px solid var(--os-black); padding: 8px 12px 10px; color: var(--os-black); }
 /* Listening-data tutorial: a house panel with pixel step badges. */
@@ -186,7 +191,7 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
     animation: row-in 0.45s steps(5) both; animation-delay: calc(var(--i, 0) * 45ms);
 }
 #recent-list .rank-row { grid-template-columns: 40px minmax(0, 1fr); }
-.rank-n { font: 16px/16px var(--font-pixel); text-align: right; -webkit-font-smoothing: none; }
+.rank-n { font: 700 14px var(--font-text); text-align: right; color: #333; }
 .thumb { width: 40px; height: 40px; object-fit: cover; border: 2px solid var(--os-black); background: #d8dae0; box-sizing: border-box; }
 .thumb.blank { background: repeating-conic-gradient(#c6c8cf 0 25%, #e4e5ea 0 50%) 0 0 / 6px 6px; }
 .rank-text { display: flex; flex-direction: column; min-width: 0; }
@@ -273,6 +278,7 @@ body.bg-night .footer span { background: rgba(10,15,10,0.85); color: #8fd9a5; }
 }
 
 @media (max-width: 520px) {
+    .win-title { font-size: 16px; line-height: 16px; }
     .win { margin-top: 16px; }
     .win-body { padding: 6px 16px 20px; }
     .tabs { padding: 8px 16px 0; }

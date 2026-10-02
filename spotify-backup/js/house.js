@@ -10,6 +10,8 @@
      House.toggle(el, hue)        same, sunk + dark when aria-pressed/selected
      House.knob(el, opts)         pixel rotary dial (role=slider)
      House.setLabel(el, text)     relabel a house button safely
+     House.plate(el, hue)         button-shaped plate behind non-button text
+     House.autoPlate(sel, hueFn)  plate matching elements, including later ones
      House.frame(el, hue, opts)   PixelFrame panel (window, notice, card)
      House.crt(el)                near-black phosphor screen
      House.retint(el, hue)        change one element's base hue
@@ -133,8 +135,11 @@
     if (!entry.keepInk) entry.el.style.color = entry.pb.selected ? s.inkOn : s.ink;
   }
   function register(entry) {
-    // Forget elements that have left the page (re-rendered lists, cards).
-    for (let i = registry.length - 1; i >= 0; i--) if (!registry[i].el.isConnected) registry.splice(i, 1);
+    // Forget elements that have left the page (re-rendered lists, cards) —
+    // only now and then, because a panel being built isn't attached yet.
+    if (registry.length > 400) {
+      for (let i = registry.length - 1; i >= 0; i--) if (!registry[i].el.isConnected) registry.splice(i, 1);
+    }
     registry.push(entry);
     paint(entry);
     return entry.pb;
@@ -157,6 +162,43 @@
     new MutationObserver(() => { entry.pb.setSelected(isOn()); paint(entry); })
       .observe(el, { attributes: true, attributeFilter: ["aria-pressed", "aria-selected", "aria-current", "class"] });
     return entry.pb;
+  }
+
+  /** A label plate: the button's bevelled shape behind text that isn't a
+      button (titles, headings), so no pixel text floats loose on a panel.
+      Never reacts to hover or press. */
+  class PlateLabel extends HouseButton {
+    draw() {
+      this._hover = false;
+      this._pressed = false;
+      super.draw();
+    }
+  }
+  function plate(el, hue = 0.11, opts = {}) {
+    if (el.dataset.plated || !el.textContent.trim()) return null;
+    el.dataset.plated = "1";
+    el.classList.add("plate");
+    return register({ el, hue, pb: new PlateLabel(el, { r: 7, border: 3, ...opts }) });
+  }
+  /** Plate every element matching a selector, now and whenever one is
+      added later (lists and cards are re-rendered). hueFor(el) → hue. */
+  function autoPlate(selector, hueFor) {
+    const run = root => {
+      if (root.matches && root.matches(selector)) plate(root, hueFor(root));
+      if (root.querySelectorAll) root.querySelectorAll(selector).forEach(e => plate(e, hueFor(e)));
+    };
+    run(document.body);
+    new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && run(n))))
+      .observe(document.body, { childList: true, subtree: true });
+  }
+  /** The hue of the nearest framed panel around `el` (so a card's title
+      plate matches its card). */
+  function hueOf(el, fallback = 0.11) {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const e = registry.find(r => r.el === p);
+      if (e) return e.hue;
+    }
+    return fallback;
   }
 
   /** Change a house button's text without wiping its canvas. */
@@ -416,6 +458,6 @@
     document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
   }
 
-  window.House = { hslHex, mutedStyle, THEMES, button, toggle, setLabel, frame, crt, retint, setTheme, currentTheme, initTooltip,
+  window.House = { hslHex, mutedStyle, THEMES, button, toggle, plate, autoPlate, hueOf, setLabel, frame, crt, retint, setTheme, currentTheme, initTooltip,
                    swatch, knob, bayer, rgb };
 })();

@@ -125,6 +125,9 @@
   House.frame(bgPanel, 0.95, { r: 8, border: 4 });
   House.frame(setPanel, 0.64, { r: 8, border: 4 });
   House.initTooltip();
+  // No pixel text loose on a panel: titles, headings and labels get plates.
+  House.autoPlate(".win-title, .stats-h, .card h3, .v-set-label, .knob-value", e =>
+    e.classList.contains("win-title") ? 0.38 : House.hueOf(e, 0.11));
 
   // Backgrounds — same picker as the site; starts on the one chosen there.
   const tilesBg = [];
@@ -270,9 +273,10 @@
   }
 
   // ---------- tabs --------------------------------------------------------
-  const TABS = [];
+  // Playlists first and always there — even a backup without them gets
+  // the tab, which then explains why it's empty.
+  const TABS = [["playlists", "Playlists", data.playlists ? data.playlists.items.length : 0]];
   if (data.likedSongs) TABS.push(["liked", "Liked songs", data.likedSongs.tracks.length]);
-  if (data.playlists) TABS.push(["playlists", "Playlists", data.playlists.items.length]);
   if (data.albums) TABS.push(["albums", "Albums", data.albums.items.length]);
   if (data.artists) TABS.push(["artists", "Artists", data.artists.items.length]);
   TABS.push(["stats", "Stats", null]);
@@ -310,6 +314,18 @@
   }
 
   function viewPlaylists(q, sub) {
+    if (!data.playlists || !data.playlists.items.length) {
+      const head = el("div", "v-head");
+      head.append(el("h2", "stats-h", "Playlists"));
+      body.append(head);
+      const why = data.warnings.filter(w => /playlist/i.test(w));
+      body.append(el("p", "empty", data.playlists
+        ? "Spotify didn't list any playlists for this account when the backup was made."
+        : "This backup doesn't include playlists: either the playlist boxes were unticked when it was made, " +
+          "or Spotify wouldn't share them. Make a new backup with \u201cMy playlists\u201d ticked to add them."));
+      if (why.length) { const ul = el("ul", "small"); why.forEach(w => ul.append(el("li", null, w))); body.append(ul); }
+      return;
+    }
     const items = data.playlists.items;
     if (sub) {
       const pl = items.find(p => String(p.position) === sub);
