@@ -36,7 +36,12 @@
     $("stats-live-body").hidden = false;
     liveMessage("Asking Spotify…", false);
     try {
-      const api = deps.client();
+      // Never sit silently: short waits are counted down here, long ones
+      // end straight away with a message.
+      const api = deps.client({
+        maxWaitSec: 30, maxTotalWaitSec: 60,
+        onWait: sec => liveMessage("Spotify asked us to slow down \u2014 trying again in " + sec + " seconds\u2026", false),
+      });
       if (!liveCache[range]) liveCache[range] = await LiveStats.fetchTop(api, range);
       if (!recentCache) {
         try { recentCache = await LiveStats.fetchRecent(api); } catch (e) { recentCache = { error: e }; }
@@ -48,7 +53,10 @@
         liveMessage("Spotify needs your OK to share listening stats. Log in again and approve the new " +
                     "permissions (it only asks to see your top artists and recent plays).", true);
       } else {
-        liveMessage(deps.friendly(e), false);
+        liveMessage(e.name === "ApiError" && e.status === 429
+          ? "Spotify is asking this app to slow down for about " + Math.max(1, Math.ceil((e.retryAfter || 60) / 60)) +
+            " minutes. Your top picks will load if you come back to this tab after that."
+          : deps.friendly(e), false);
       }
     }
   }

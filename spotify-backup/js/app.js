@@ -161,15 +161,31 @@
     });
   }
 
+  /** Show the Choose step straight away; the greeting's name is fetched
+      in the background and never waited for. (Waiting for it is what left
+      the page blank whenever Spotify was rate-limiting the app.) */
   async function toChoose() {
+    $("who").textContent = "there";
+    show("choose");
     try {
-      const me = await client().get("/me");
+      // maxWaitSec 0: if Spotify says "slow down", say so instead of waiting.
+      const me = await client({ maxWaitSec: 0 }).get("/me");
       $("who").textContent = me.display_name || me.id || "there";
-      show("choose");
     } catch (e) {
-      if (e instanceof AuthError || (e.name === "ApiError" && e.status === 401)) SpotifyAuth.logout();
-      show("login");
-      notice(friendly(e));
+      if (e instanceof AuthError || (e.name === "ApiError" && e.status === 401)) {
+        SpotifyAuth.logout();
+        show("login");
+        notice(friendly(e));
+      } else if (e.name === "ApiError" && e.status === 403) {
+        show("login");
+        notice(friendly(e));
+      } else if (e.name === "ApiError" && e.status === 429) {
+        const mins = Math.max(1, Math.ceil((e.retryAfter || 60) / 60));
+        notice("Spotify is asking this app to slow down right now (for about " + mins + " minute" + (mins === 1 ? "" : "s") +
+               "). You can still press Start: the backup waits its turn with a countdown, and if the break is long it " +
+               "stops cleanly so you can press Continue later.", "info");
+      }
+      // A network blip just leaves the greeting as "Hi, there".
     }
   }
 
